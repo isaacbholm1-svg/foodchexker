@@ -63,7 +63,6 @@ Yes. **No key is in the code or on the website.** Each person pastes their own k
 
 ## Ideas for next steps
 
-- Barcode scanning for packaged foods
 - Favorite/recent meals for one-tap logging
 - Weekly charts and streaks
 - Sync across devices (would need a backend and accounts)
