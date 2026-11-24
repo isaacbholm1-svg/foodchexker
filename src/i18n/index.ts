@@ -8,6 +8,7 @@ export interface Dict {
   s: Record<StringKey, string>;
   celebrate: string[];
   celebrateNamed: string[];
+  tips: string[];
   pools: Record<PoolKey, string[]>;
   friend: string;
 }
@@ -69,6 +70,11 @@ export function pool(key: PoolKey): string[] {
 export function celebrateLines(named: boolean): string[] {
   const d = DICTS[current];
   return named ? [...d.celebrate, ...d.celebrateNamed] : d.celebrate;
+}
+
+export function tips(): string[] {
+  const d = DICTS[current];
+  return d.tips?.length ? d.tips : en.tips;
 }
 
 export function friendWord(): string {

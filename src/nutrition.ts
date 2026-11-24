@@ -1,13 +1,47 @@
 // Evidence-based target calculations. All inputs are metric; the UI converts units.
 import { locale, t, type StringKey } from "./i18n";
-import type { Activity, Goal, Profile, Targets, Units } from "./store";
+import type { Activity, Goal, Intensity, Movement, Profile, Targets, Units } from "./store";
 
 export const ACTIVITY_FACTOR: Record<Activity, number> = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very: 1.9 };
 export const ACTIVITIES = Object.keys(ACTIVITY_FACTOR) as Activity[];
 export const activityLabel = (a: Activity) => t(`act_${a}` as StringKey);
 export const activityDesc = (a: Activity) => t(`act_${a}_d` as StringKey);
 
-export const GOAL_EMOJI: Record<Goal, string> = { lose: "📉", maintain: "⚖️", muscle: "💪", gain: "📈", healthy: "🥗" };
+// Daily movement outside workouts, plus extra for workouts per week × intensity (physical activity level).
+export const MOVEMENT_FACTOR: Record<Movement, number> = { desk: 1.2, light: 1.3, onfeet: 1.4, physical: 1.55 };
+export const MOVEMENTS = Object.keys(MOVEMENT_FACTOR) as Movement[];
+export const EXERCISE_EXTRA = [0, 0.12, 0.25, 0.35, 0.45, 0.6];
+export const INTENSITY_MULT: Record<Intensity, number> = { light: 0.7, moderate: 1, hard: 1.3 };
+export const INTENSITIES = Object.keys(INTENSITY_MULT) as Intensity[];
+export const movementLabel = (m: Movement) => t(`mov_${m}` as StringKey);
+export const movementDesc = (m: Movement) => t(`mov_${m}_d` as StringKey);
+export const exerciseLabel = (n: number) => t(`ex_${n}` as StringKey);
+export const intensityLabel = (i: Intensity) => t(`int_${i}` as StringKey);
+
+/** Older profiles only had one activity level; map it to the newer, more detailed questions. */
+export function migrateActivity(a: Activity): { movement: Movement; exercise: number; intensity: Intensity } {
+  return {
+    sedentary: { movement: "desk" as Movement, exercise: 0, intensity: "moderate" as Intensity },
+    light: { movement: "desk" as Movement, exercise: 1, intensity: "moderate" as Intensity },
+    moderate: { movement: "light" as Movement, exercise: 2, intensity: "moderate" as Intensity },
+    active: { movement: "light" as Movement, exercise: 4, intensity: "moderate" as Intensity },
+    very: { movement: "onfeet" as Movement, exercise: 5, intensity: "hard" as Intensity },
+  }[a];
+}
+
+export function activityFactor(p: Profile): number {
+  if (!p.movement) return ACTIVITY_FACTOR[p.activity];
+  const extra = EXERCISE_EXTRA[p.exercise ?? 0] * INTENSITY_MULT[p.intensity ?? "moderate"];
+  return Math.min(2.2, Math.max(1.2, MOVEMENT_FACTOR[p.movement] + extra));
+}
+
+/** Short text describing someone's activity, for the profile summary. */
+export function activitySummary(p: Profile): string {
+  if (!p.movement) return activityLabel(p.activity);
+  return `${movementLabel(p.movement)} · ${exerciseLabel(p.exercise ?? 0)}${p.exercise ? ` (${intensityLabel(p.intensity ?? "moderate").split(" (")[0]})` : ""}`;
+}
+
+export const GOAL_EMOJI: Record<Goal, string> = { lose: "📉", recomp: "🔄", maintain: "⚖️", muscle: "💪", gain: "📈", performance: "🏃", energy: "⚡", healthy: "🥗" };
 export const GOALS = Object.keys(GOAL_EMOJI) as Goal[];
 export const goalLabel = (g: Goal) => t(`goal_${g}` as StringKey);
 export const goalDesc = (g: Goal) => t(`goal_${g}_d` as StringKey);
@@ -27,7 +61,7 @@ export function bmr(p: Profile): number {
 }
 
 export function tdee(p: Profile): number {
-  return bmr(p) * ACTIVITY_FACTOR[p.activity];
+  return bmr(p) * activityFactor(p);
 }
 
 export interface GoalCheck {
@@ -37,7 +71,7 @@ export interface GoalCheck {
 
 /** Safety rules for which goals the app will plan for. */
 export function goalAllowed(p: Pick<Profile, "age" | "heightCm" | "weightKg">, goal: Goal): GoalCheck {
-  if (goal === "lose") {
+  if (goal === "lose" || goal === "recomp") {
     if (p.age < 18) return { allowed: false, reason: t("teenNoDeficit") };
     if (bmi(p) < 18.5) return { allowed: false, reason: t("underweightNoLoss") };
   }
@@ -91,11 +125,13 @@ export function makePlan(p: Profile): Plan {
     if (p.age < 18) adj = Math.min(adj, 300);
   } else if (goal === "muscle") {
     adj = p.age < 18 ? 200 : 300;
+  } else if (goal === "recomp") {
+    adj = -Math.min(T * 0.1, 300); // small deficit so muscle can still grow
   }
 
   let calories = T + adj;
   const floor = p.sex === "male" ? 1500 : p.sex === "female" ? 1200 : 1350;
-  if (goal === "lose" && calories < Math.max(floor, B)) {
+  if ((goal === "lose" || goal === "recomp") && calories < Math.max(floor, B)) {
     calories = Math.max(floor, B);
     notes.push(t("noteRaised"));
   }
@@ -103,10 +139,10 @@ export function makePlan(p: Profile): Plan {
 
   // Protein: grams per kg of body weight, based on a reference weight for higher BMIs.
   const refKg = Math.min(p.weightKg, 27 * (p.heightCm / 100) ** 2);
-  const perKg = p.age < 18 ? 1.2 : { lose: 1.8, maintain: 1.4, muscle: 2.0, gain: 1.6, healthy: 1.2 }[goal];
+  const perKg = p.age < 18 ? 1.2 : { lose: 1.8, recomp: 2.0, maintain: 1.4, muscle: 2.0, gain: 1.6, performance: 1.6, energy: 1.3, healthy: 1.2 }[goal];
   const protein = Math.round(refKg * perKg);
 
-  const fatPct = goal === "muscle" ? 0.25 : 0.3;
+  const fatPct = goal === "muscle" || goal === "performance" ? 0.25 : 0.3; // more room for carbs when training
   const fat = Math.round(Math.max((calories * fatPct) / 9, p.weightKg * 0.6));
   const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4));
   const fiber = Math.round((calories / 1000) * 14);
@@ -117,7 +153,7 @@ export function makePlan(p: Profile): Plan {
   const n = (x: number) => Math.round(x).toLocaleString(locale());
   const why = [
     { title: t("why1t"), text: t("why1", { bmr: n(B), tdee: n(T) }) },
-    { title: t("why2t"), text: adj < 0 ? t("why2minus", { n: n(-adj) }) : adj > 0 ? t("why2plus", { n: n(adj) }) : t("why2zero") },
+    { title: t("why2t"), text: goal === "recomp" ? t("why2recomp", { n: n(-adj) }) : goal === "performance" ? t("why2performance") : adj < 0 ? t("why2minus", { n: n(-adj) }) : adj > 0 ? t("why2plus", { n: n(adj) }) : t("why2zero") },
     { title: t("why3t"), text: t("why3", { g: perKg.toLocaleString(locale()) }) },
     { title: t("why4t"), text: t("why4", { pct: Math.round(fatPct * 100) }) },
     { title: t("why5t"), text: t("why5") },

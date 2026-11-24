@@ -4,13 +4,24 @@ import { t, type Lang } from "./i18n";
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 export type Sex = "male" | "female" | "other";
 export type Activity = "sedentary" | "light" | "moderate" | "active" | "very";
-export type Goal = "lose" | "maintain" | "muscle" | "gain" | "healthy";
+export type Goal = "lose" | "maintain" | "muscle" | "gain" | "healthy" | "recomp" | "performance" | "energy";
+export type Movement = "desk" | "light" | "onfeet" | "physical";
+export type Intensity = "light" | "moderate" | "hard";
 
 export interface Entry {
   id: string;
   date: string; // YYYY-MM-DD, local time
   time: number; // epoch ms
   meal: MealType;
+  name: string;
+  thumb?: string;
+  items: FoodItem[];
+  source?: EntrySource; // how it was logged (used for achievements)
+}
+
+export type EntrySource = "photo" | "text" | "barcode" | "quick" | "repeat" | "favorite";
+
+export interface Favorite {
   name: string;
   thumb?: string;
   items: FoodItem[];
@@ -22,7 +33,10 @@ export interface Profile {
   age: number;
   heightCm: number;
   weightKg: number;
-  activity: Activity;
+  activity: Activity; // older profiles; newer ones use movement + exercise + intensity
+  movement?: Movement; // how much you move outside workouts
+  exercise?: number; // workouts per week bucket: 0 none, 1 = 1–2, 2 = 3–4, 3 = 5–6, 4 = daily, 5 = twice a day
+  intensity?: Intensity;
   goal: Goal;
   paceKgPerWeek: number; // for lose/gain goals
   goalWeightKg?: number;
@@ -64,6 +78,8 @@ const SETTINGS_KEY = "fc.settings.v2";
 const OLD_SETTINGS_KEY = "fc.settings.v1";
 const WEIGHTS_KEY = "fc.weights.v1";
 const WATER_KEY = "fc.water.v1";
+const FAVORITES_KEY = "fc.favorites.v1";
+const BADGES_KEY = "fc.badges.v1";
 
 export const DEFAULT_TARGETS: Targets = { calories: 2000, protein: 120, carbs: 225, fat: 65, fiber: 28, waterMl: 2000 };
 
@@ -143,8 +159,15 @@ export function entriesFor(date: string): Entry[] {
   return entries.filter((e) => e.date === date).sort((a, b) => a.time - b.time);
 }
 
-export function addEntry(e: Omit<Entry, "id">): void {
-  entries.push({ ...e, id: crypto.randomUUID() });
+export function addEntry(e: Omit<Entry, "id">): string {
+  const id = crypto.randomUUID();
+  entries.push({ ...e, id });
+  persistEntries();
+  return id;
+}
+
+export function updateEntry(id: string, patch: Partial<Omit<Entry, "id">>): void {
+  entries = entries.map((e) => (e.id === id ? { ...e, ...patch } : e));
   persistEntries();
 }
 
@@ -212,10 +235,40 @@ export function exportCsv(): string {
   return rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
 }
 
+// ---------- favorites ----------
+let favorites: Favorite[] = read<Favorite[]>(FAVORITES_KEY, []);
+const favKey = (name: string) => name.trim().toLowerCase();
+
+export function allFavorites(): Favorite[] {
+  return favorites;
+}
+export function isFavorite(name: string): boolean {
+  return favorites.some((f) => favKey(f.name) === favKey(name));
+}
+/** Adds or removes a favorite; returns true if it is now a favorite. */
+export function toggleFavorite(f: Favorite): boolean {
+  if (isFavorite(f.name)) {
+    favorites = favorites.filter((x) => favKey(x.name) !== favKey(f.name));
+    write(FAVORITES_KEY, favorites);
+    return false;
+  }
+  favorites = [{ name: f.name, thumb: f.thumb, items: f.items }, ...favorites];
+  write(FAVORITES_KEY, favorites);
+  return true;
+}
+
+// ---------- achievements already shown ----------
+export function seenBadges(): Set<string> {
+  return new Set(read<string[]>(BADGES_KEY, []));
+}
+export function markBadgesSeen(ids: Iterable<string>): void {
+  write(BADGES_KEY, [...new Set([...seenBadges(), ...ids])]);
+}
+
 /** Full backup. The API key is left out on purpose so a shared backup file never leaks it. */
 export function exportBackup(settings: Settings): string {
   const { apiKey: _omit, ...rest } = settings;
-  return JSON.stringify({ app: "foodchecker", version: 2, exportedAt: new Date().toISOString(), settings: rest, entries, weights, water });
+  return JSON.stringify({ app: "foodchecker", version: 2, exportedAt: new Date().toISOString(), settings: rest, entries, weights, water, favorites, badges: [...seenBadges()] });
 }
 
 export function importBackup(json: string, keepApiKey: string): void {
@@ -227,6 +280,9 @@ export function importBackup(json: string, keepApiKey: string): void {
   entries = data.entries;
   weights = Array.isArray(data.weights) ? data.weights : [];
   water = data.water && typeof data.water === "object" ? data.water : {};
+  favorites = Array.isArray(data.favorites) ? data.favorites : [];
+  write(FAVORITES_KEY, favorites);
+  write(BADGES_KEY, Array.isArray(data.badges) ? data.badges : []);
   persistEntries();
   write(WEIGHTS_KEY, weights);
   write(WATER_KEY, water);
@@ -234,7 +290,7 @@ export function importBackup(json: string, keepApiKey: string): void {
 }
 
 export function resetEverything(): void {
-  for (const k of [ENTRIES_KEY, SETTINGS_KEY, OLD_SETTINGS_KEY, WEIGHTS_KEY, WATER_KEY, "fc.model.v1", "fc.model.v2", "fc.models.v2", "fc.models.v3", "fc.plainmodels.v1"]) {
+  for (const k of [ENTRIES_KEY, SETTINGS_KEY, OLD_SETTINGS_KEY, WEIGHTS_KEY, WATER_KEY, FAVORITES_KEY, BADGES_KEY, "fc.model.v1", "fc.model.v2", "fc.models.v2", "fc.models.v3", "fc.plainmodels.v1"]) {
     try {
       localStorage.removeItem(k);
     } catch {
