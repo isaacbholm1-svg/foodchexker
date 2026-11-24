@@ -1,14 +1,14 @@
 # FoodChexker
 
-An iPhone-friendly calorie counter. Snap a photo of your meal (or type what you ate) and AI estimates the calories, protein, carbs and fat. It runs in Safari and installs to your Home Screen like a regular app, so you don't need a Mac, Xcode or an Apple developer account.
+An iPhone-friendly calorie counter. Snap a photo of your meal (or type what you ate) and free AI (Google Gemini) estimates the calories, protein, carbs and fat. It runs in Safari and installs to your Home Screen like a regular app, so you don't need a Mac, Xcode or an Apple developer account.
 
 ## Features
 
-- **Photo → nutrition**: take a picture or pick one from your library; Claude identifies each food, estimates portions, and returns calories and macros.
+- **Photo → nutrition**: take a picture or pick one from your library; the AI identifies each food, estimates portions, and returns calories and macros.
 - **Text entry**: type "2 eggs, toast with butter, coffee" instead of a photo. Text typed before snapping a photo is sent as extra detail ("only ate half").
 - **Review before saving**: rename the meal, fix any item's calories (its macros scale with it), remove items, change servings, pick the meal.
 - **Daily dashboard**: calorie ring plus protein/carb/fat progress against your goals; browse previous days.
-- **Private**: your log and API key are stored only on your phone. Photos go straight from your phone to Anthropic's API.
+- **Private**: your log and API key are stored only on your phone. Photos go straight from your phone to Google's AI.
 - **Export**: download your whole log as CSV from Settings.
 
 ## Put it on your iPhone
@@ -16,11 +16,13 @@ An iPhone-friendly calorie counter. Snap a photo of your meal (or type what you 
 1. **Turn on GitHub Pages** (one time): in this repo on GitHub, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
 2. **Deploy**: merge this code into `main`. The workflow in `.github/workflows/deploy.yml` builds the app and publishes it to `https://<your-github-username>.github.io/foodchexker/`.
 3. **Install**: open that URL in **Safari** on your iPhone, tap **Share → Add to Home Screen**.
-4. **Get an API key**: create one at [platform.claude.com](https://platform.claude.com/settings/keys) (you'll need to add a few dollars of credit). Open the app and paste the key in Settings.
+4. **Get a free AI key** (each person who uses the app does this once): sign in with a Google account at [aistudio.google.com/apikey](https://aistudio.google.com/apikey), tap **Create API key**, copy it, open the app and paste it in Settings. No credit card needed.
 
 ### What it costs
 
-The app uses `claude-opus-5-5` ($4 per million input tokens, $20 per million output tokens). A typical photo analysis is roughly 2,000–3,000 input tokens and a few hundred to a couple thousand output tokens (including the model's thinking), so expect around **1–5 cents per meal**. You can watch exact usage in the Anthropic console.
+Nothing. The app uses Google's free Gemini tier. It has daily and per-minute limits, but they're far more than a few meals a day. If you hit one, the app says so; wait and try again. If Google moves a model off the free tier, the app automatically tries the next free one.
+
+Heads-up: Google's terms say free-tier requests may be used to improve their products, so don't use it for anything private.
 
 ## Run it on your computer
 
@@ -35,15 +37,17 @@ npm run dev
 
 | File | What it does |
 |---|---|
-| `src/ai.ts` | Sends the photo/text to Claude with a dietitian prompt and a Zod schema, so the answer comes back as structured JSON (items, portions, kcal, macros, confidence, notes). |
+| `src/ai.ts` | Sends the photo/text to Gemini with a dietitian prompt and a JSON schema, so the answer comes back as structured data (items, portions, kcal, macros, confidence, notes). |
 | `src/image.ts` | Shrinks the photo on the phone before upload (faster and cheaper) and makes thumbnails. |
 | `src/store.ts` | Saves your log and settings in the browser's local storage. |
 | `src/main.ts` | The UI: dashboard, review sheet, settings. |
 | `public/sw.js` | Service worker so the app opens offline. |
 
-## Security note
+## Is it safe if the site is public?
 
-The app calls the Anthropic API directly from your phone using the key you paste in, which is fine for a personal app because the key never leaves your device except to go to Anthropic. **Don't** hard-code a key into the code or share your deployed link with a key baked in. If you ever want other people to use it, add a small backend (for example a Cloudflare Worker) that holds the key and forwards requests, and have the app call that instead.
+Yes. **No key is in the code or on the website.** Each person pastes their own key into Settings on their own phone, and it's stored only there. Anyone can open the public link, but without a key it can't do anything, and nobody can see your key.
+
+**Never put a key in the code.** The repo and the website are public, so anyone could copy it and use up your limits.
 
 ## Ideas for next steps
 
@@ -51,4 +55,4 @@ The app calls the Anthropic API directly from your phone using the key you paste
 - Favorite/recent meals for one-tap logging
 - Weekly charts and streaks
 - Sync across devices (would need a backend and accounts)
-- A native SwiftUI version with HealthKit integration (needs a Mac with Xcode)
+- A native SwiftUI version with Apple Health integration (needs a Mac with Xcode)

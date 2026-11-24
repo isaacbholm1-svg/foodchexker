@@ -208,7 +208,7 @@ const review = $("review") as HTMLDialogElement;
 
 function needKey(): boolean {
   if (settings.apiKey) return false;
-  toast("Add your Anthropic API key in Settings first.");
+  toast("Add your free Google AI key in Settings first.");
   openSettings();
   return true;
 }
