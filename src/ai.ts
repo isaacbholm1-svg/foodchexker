@@ -399,3 +399,75 @@ export async function suggestIdeas(opts: {
     }))
     .filter((i) => i.title);
 }
+
+// ---------------- food chat ----------------
+
+export interface ChatTurn {
+  role: "user" | "model";
+  text: string;
+}
+
+export interface ChatReply {
+  text: string;
+  sources: { title: string; url: string }[];
+}
+
+const CHAT_SYSTEM = `You are FoodChecker's food assistant inside a calorie-tracking app.
+You ONLY help with: food, nutrition, calories and macros, ingredients, recipes, cooking, meal planning, grocery shopping, healthy eating habits, hydration, and how food relates to exercise.
+If the user asks about anything else (for example news, homework, coding, sports results, politics, celebrities, other apps), politely say in one or two sentences that you can only help with food, nutrition and recipes, and suggest a food-related question instead. Do not answer the off-topic question, even partly.
+Safety: never recommend extreme diets, very low calorie intakes, skipping meals, purging, or pills. Be kind and never shame. If someone seems to struggle with eating, gently suggest talking to a doctor or someone they trust. For medical conditions, allergies or pregnancy, give general information and suggest asking a doctor or dietitian. For children and teens, focus on balanced, growth-friendly eating.
+Style: friendly and concise. Use short paragraphs or bullet lists. For recipes give: a title, servings, an ingredients list with amounts, numbered steps, and approximate calories and protein per serving. Use metric units unless the user prefers otherwise.
+Use Google Search when you need facts you are unsure about (for example nutrition of a specific product or restaurant dish).`;
+
+/** One chat answer. Uses Google Search grounding when the model supports it, otherwise answers without it. */
+export async function chatAnswer(opts: { apiKey: string; history: ChatTurn[]; context: string }): Promise<ChatReply> {
+  const ai = new GoogleGenAI({ apiKey: opts.apiKey, apiVersion: "v1beta", httpOptions: { timeout: 30_000 } });
+  const started = Date.now();
+  const remembered = readStorage(MODEL_KEY);
+  const listed = await availableModels(ai, opts.apiKey);
+  const candidates = listed.length ? listed : MODELS;
+  const order = [...new Set([...(remembered && candidates.includes(remembered) ? [remembered] : []), ...candidates])].slice(0, 4);
+  const system = `${CHAT_SYSTEM}\nAlways reply in ${languageEnglishName()}.\nAbout the user: ${opts.context}`;
+  const contents = opts.history.slice(-16).map((m) => ({ role: m.role, parts: [{ text: m.text }] }));
+
+  let lastError: unknown;
+  let lastModel = "";
+  for (const model of order) {
+    if (Date.now() - started > 60_000) break;
+    for (const withSearch of [true, false]) {
+      try {
+        const res = await ai.models.generateContent({
+          model,
+          contents,
+          config: { systemInstruction: system, temperature: 0.6, ...(withSearch ? { tools: [{ googleSearch: {} }] } : {}) },
+        });
+        if (res.promptFeedback?.blockReason) throw new AnalysisError(t("aiDeclined"));
+        const text = res.text?.trim();
+        if (!text) throw new AnalysisError(t("aiNoAnswer"));
+        const chunks = res.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+        const sources = chunks
+          .map((c) => ({ title: c.web?.title ?? "", url: c.web?.uri ?? "" }))
+          .filter((s) => s.url.startsWith("https://"))
+          .filter((s, i, a) => a.findIndex((x) => x.url === s.url) === i)
+          .slice(0, 4);
+        writeStorage(MODEL_KEY, model);
+        return { text, sources };
+      } catch (err) {
+        if (err instanceof AnalysisError) throw err;
+        console.warn("[FoodChecker] chat failed", model, withSearch, err);
+        lastError = err;
+        lastModel = model;
+        // Search isn't available on every model or quota: try the same model without it.
+        if (withSearch && err instanceof ApiError && !accountProblem(err) && err.status !== 404) continue;
+        break;
+      }
+    }
+    if (tryNextModel(lastError)) {
+      if (transient(lastError)) await sleep(600);
+      continue;
+    }
+    break;
+  }
+  const detail = lastError instanceof ApiError ? ` (${lastError.status} · ${lastModel}${googleReason(lastError)})` : "";
+  throw new AnalysisError(describeApiError(lastError) + detail);
+}

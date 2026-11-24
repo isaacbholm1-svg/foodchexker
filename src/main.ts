@@ -1,5 +1,6 @@
 import "./style.css";
 import { analyzeMeal, AnalysisError, suggestIdeas, type Analysis, type FoodItem, type Idea } from "./ai";
+import { renderChat } from "./chat";
 import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
 import { confetti, countUp, replay } from "./fx";
 import { LookupError, lookupBarcode, startScanner, type ScanControls } from "./barcode";
@@ -50,7 +51,7 @@ const ACCENTS: Settings["accent"][] = ["green", "blue", "purple", "pink", "orang
 let settings = loadSettings();
 setLanguage(settings.language ?? detectLanguage());
 let viewDate = localDate();
-let tab: "today" | "stats" | "settings" = "today";
+let tab: "today" | "chat" | "stats" | "settings" = "today";
 let statsRange: Range = "week";
 let motivationSeed = 0;
 let draftText = "";
@@ -90,6 +91,7 @@ function setTab(t: typeof tab) {
     else b.removeAttribute("aria-current");
   }
   $("view-today").hidden = t !== "today";
+  $("view-chat").hidden = t !== "chat";
   $("view-stats").hidden = t !== "stats";
   $("view-settings").hidden = t !== "settings";
   render();
@@ -99,6 +101,7 @@ function setTab(t: typeof tab) {
 
 function render() {
   if (tab === "today") renderToday();
+  else if (tab === "chat") renderChat($("view-chat"), { apiKey: settings.apiKey, context: chatContext, openSettings: () => setTab("settings") });
   else if (tab === "stats") renderStats($("view-stats"), settings, statsRange, (r) => { statsRange = r; render(); }, openWeightDialog);
   else renderSettings();
 }
@@ -1214,7 +1217,7 @@ function renderSettings() {
     t("about"),
   );
 
-  root.replaceChildren(h("h1", { class: "page-title" }, t("settings")), languageCard(), profileCard, targetsCard, unitsCard, appearanceCard, featuresCard, aiCard, dataCard, about);
+  root.replaceChildren(h("h1", { class: "page-title" }, t("settings")), languageCard(), profileCard, targetsCard, unitsCard, appearanceCard, featuresCard, aiCard, feedbackCard(), dataCard, about);
 }
 
 function languageCard() {
@@ -1244,6 +1247,85 @@ function changeLanguage(code: (typeof LANGUAGES)[number]["code"]) {
 /** Text that lives in index.html (tab bar). */
 function applyLanguage() {
   for (const el of document.querySelectorAll<HTMLElement>("[data-i18n]")) el.textContent = t(el.dataset.i18n as StringKey);
+}
+
+/** What the food chat knows about the user, so answers fit their day. */
+function chatContext(): string {
+  const p = settings.profile;
+  const tg = settings.targets;
+  const items = entriesFor(localDate()).flatMap((e) => e.items);
+  const tot = sum(items);
+  const parts = [
+    p ? `Goal: ${goalLabel(p.goal)}. Age ${p.age}. ${p.sex}.` : "No profile.",
+    `Daily targets: ${tg.calories} kcal, ${tg.protein} g protein. Eaten today: ${round(tot.calories)} kcal, ${round(tot.protein_g)} g protein.`,
+    `Preferred units: ${settings.units.weight === "kg" ? "metric" : "US"}.`,
+  ];
+  return parts.join(" ");
+}
+
+// ---------------- feedback ----------------
+function feedbackCard(): HTMLElement {
+  let rating = 0;
+  let kind: "fbBug" | "fbIdea" | "fbLove" | "fbOther" = "fbIdea";
+  const stars = h("div", { class: "fb-stars", role: "radiogroup", "aria-label": t("feedbackRating") });
+  const drawStars = () =>
+    stars.replaceChildren(
+      ...[1, 2, 3, 4, 5].map((n) =>
+        h("button", { class: `fb-star${n <= rating ? " on" : ""}`, role: "radio", "aria-checked": String(n === rating), "aria-label": `${n}/5`, onclick: () => { rating = n; drawStars(); replay(stars.children[n - 1], "pop"); } }, n <= rating ? "★" : "☆"),
+      ),
+    );
+  drawStars();
+  const text = h("textarea", { class: "fb-text", rows: 4, placeholder: t("feedbackPh") });
+  const send = async () => {
+    const msg = text.value.trim();
+    if (!msg) return toast(t("feedbackEmpty"));
+    const body = [
+      `FoodChecker – ${t(kind)}`,
+      rating ? `${"★".repeat(rating)}${"☆".repeat(5 - rating)}` : "",
+      "",
+      msg,
+      "",
+      `— ${getLanguage()} · ${new Date().toISOString().slice(0, 10)} · ${navigator.userAgent.match(/iPhone OS [\d_]+|Android [\d.]+/)?.[0] ?? "web"}`,
+    ]
+      .filter((l, i) => l || i > 1)
+      .join("\n");
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "FoodChecker feedback", text: body });
+      } else {
+        await navigator.clipboard.writeText(body);
+        toast(t("feedbackCopied"), 5000);
+        return;
+      }
+      toast(t("feedbackThanks"));
+      text.value = "";
+      rating = 0;
+      drawStars();
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return; // closed the share sheet
+      try {
+        await navigator.clipboard.writeText(body);
+        toast(t("feedbackCopied"), 5000);
+      } catch {
+        toast(t("somethingWrong"));
+      }
+    }
+  };
+  return h(
+    "section",
+    { class: "card settings-card" },
+    h("h3", {}, t("feedback")),
+    h("p", { class: "muted small" }, t("feedbackDesc")),
+    h("div", { class: "field" }, h("span", {}, t("feedbackRating")), stars),
+    segmented(
+      (["fbBug", "fbIdea", "fbLove", "fbOther"] as const).map((k) => ({ value: k, label: t(k) })),
+      kind,
+      (v) => (kind = v),
+      t("feedback"),
+    ),
+    text,
+    h("button", { class: "btn wide primary", onclick: send }, t("sendFeedback")),
+  );
 }
 
 function unitRow(label: string, control: HTMLElement) {
