@@ -283,6 +283,8 @@ const sv: Dict = {
     loadCount: "Räknar kalorier…",
     loadAlmost: "Nästan klart…",
     tagline: "Fota. Koll. Må bra.",
+    kidMaintain: "För barn planerar appen balanserade måltider utan kaloriunderskott eller överskott. Växandet sköter resten.",
+    noteKid: "Barns behov varierar mycket. Använd siffrorna som en ungefärlig vägledning tillsammans med en förälder, och fråga en läkare om du är osäker.",
     aiPowered: "AI-drivet",
     ideasTitle: "Idéer för dig",
     ideasLoading: "Funderar på idéer…",

@@ -1025,7 +1025,7 @@ function openWeightDialog() {
           class: "btn primary",
           onclick: () => {
             const kg = weightToKg(parseFloat(input.value), u);
-            if (!(kg >= 30 && kg <= 300)) return toast(t("invalidWeight"));
+            if (!(kg >= 10 && kg <= 300)) return toast(t("invalidWeight"));
             logWeight(dateInput.value || localDate(), kg);
             syncWeight();
             mini.close();

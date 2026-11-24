@@ -55,6 +55,13 @@ export function bmi(p: Pick<Profile, "heightCm" | "weightKg">): number {
 
 /** Mifflin-St Jeor resting energy (kcal/day). "other" uses the midpoint of the two sex constants. */
 export function bmr(p: Profile): number {
+  // Children: Schofield equations (weight-based), which are made for growing bodies.
+  if (p.age < 13) {
+    const young = p.age < 10;
+    const m = young ? 22.7 * p.weightKg + 495 : 17.5 * p.weightKg + 651;
+    const f = young ? 22.5 * p.weightKg + 499 : 12.2 * p.weightKg + 746;
+    return p.sex === "male" ? m : p.sex === "female" ? f : (m + f) / 2;
+  }
   const base = 10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age;
   const s = p.sex === "male" ? 5 : p.sex === "female" ? -161 : -78;
   return base + s;
@@ -71,6 +78,10 @@ export interface GoalCheck {
 
 /** Safety rules for which goals the app will plan for. */
 export function goalAllowed(p: Pick<Profile, "age" | "heightCm" | "weightKg">, goal: Goal): GoalCheck {
+  // Kids: balanced eating only, never a planned deficit or surplus.
+  if (p.age < 13 && goal !== "maintain" && goal !== "healthy" && goal !== "energy" && goal !== "performance") {
+    return { allowed: false, reason: t("kidMaintain") };
+  }
   if (goal === "lose" || goal === "recomp") {
     if (p.age < 18) return { allowed: false, reason: t("teenNoDeficit") };
     if (bmi(p) < 18.5) return { allowed: false, reason: t("underweightNoLoss") };
@@ -139,16 +150,17 @@ export function makePlan(p: Profile): Plan {
 
   // Protein: grams per kg of body weight, based on a reference weight for higher BMIs.
   const refKg = Math.min(p.weightKg, 27 * (p.heightCm / 100) ** 2);
-  const perKg = p.age < 18 ? 1.2 : { lose: 1.8, recomp: 2.0, maintain: 1.4, muscle: 2.0, gain: 1.6, performance: 1.6, energy: 1.3, healthy: 1.2 }[goal];
+  const perKg = p.age < 13 ? 1.0 : p.age < 18 ? 1.2 : { lose: 1.8, recomp: 2.0, maintain: 1.4, muscle: 2.0, gain: 1.6, performance: 1.6, energy: 1.3, healthy: 1.2 }[goal];
   const protein = Math.round(refKg * perKg);
 
   const fatPct = goal === "muscle" || goal === "performance" ? 0.25 : 0.3; // more room for carbs when training
   const fat = Math.round(Math.max((calories * fatPct) / 9, p.weightKg * 0.6));
   const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4));
   const fiber = Math.round((calories / 1000) * 14);
-  const waterMl = Math.round(Math.min(4000, Math.max(1500, p.weightKg * 35)) / 50) * 50;
+  const waterMl = Math.round(Math.min(4000, Math.max(p.age < 13 ? 1000 : 1500, p.weightKg * 35)) / 50) * 50;
 
-  if (p.age < 18) notes.push(t("noteTeen"));
+  if (p.age < 13) notes.push(t("noteKid"));
+  else if (p.age < 18) notes.push(t("noteTeen"));
 
   const n = (x: number) => Math.round(x).toLocaleString(locale());
   const why = [

@@ -111,11 +111,11 @@ export function runOnboarding(opts: {
   });
 
   steps.push({
-    valid: () => (p.age >= 13 && p.age <= 100 ? null : p.age > 0 && p.age < 13 ? t("tooYoung") : t("ageRequired")),
+    valid: () => (p.age >= 2 && p.age <= 110 ? null : t("ageRequired")),
     render: () => [
       h("h2", {}, t("aboutYou")),
       h("p", { class: "muted" }, t("aboutYouDesc")),
-      field(t("age"), numInput(p.age, (v) => (p.age = Math.round(v || 0)), { inputmode: "numeric", min: 13, max: 100 }), t("years")),
+      field(t("age"), numInput(p.age, (v) => (p.age = Math.round(v || 0)), { inputmode: "numeric", min: 2, max: 110 }), t("years")),
       h("div", { class: "field" }, h("span", {}, t("sex")), segmented<Sex>([{ value: "female", label: t("female") }, { value: "male", label: t("male") }, { value: "other", label: t("other") }], p.sex, (v) => (p.sex = v), t("sex"))),
       h("p", { class: "muted small" }, t("otherNote")),
     ],
@@ -123,8 +123,8 @@ export function runOnboarding(opts: {
 
   steps.push({
     valid: () => {
-      if (!(p.heightCm >= 100 && p.heightCm <= 250)) return t("invalidHeight");
-      if (!(p.weightKg >= 30 && p.weightKg <= 300)) return t("invalidWeight");
+      if (!(p.heightCm >= 50 && p.heightCm <= 250)) return t("invalidHeight");
+      if (!(p.weightKg >= 10 && p.weightKg <= 300)) return t("invalidWeight");
       return null;
     },
     render: () => {
