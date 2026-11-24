@@ -83,37 +83,16 @@ export async function analyzeMeal(opts: {
       : "Estimate the nutrition for this meal.",
   });
 
-  let remembered: string | null = null;
-  try {
-    remembered = localStorage.getItem(MODEL_KEY);
-  } catch {
-    /* storage unavailable */
-  }
-  const order = remembered && MODELS.includes(remembered) ? [remembered, ...MODELS.filter((m) => m !== remembered)] : MODELS;
+  const remembered = readStorage(MODEL_KEY);
+  const listed = await availableModels(ai, opts.apiKey);
+  const candidates = listed.length ? listed : MODELS;
+  const order = [...new Set([...(remembered && candidates.includes(remembered) ? [remembered] : []), ...candidates])].slice(0, 6);
 
   let lastError: unknown;
   for (const model of order) {
     try {
-      const res = await ai.models.generateContent({
-        model,
-        contents: [{ role: "user", parts }],
-        config: {
-          systemInstruction: SYSTEM,
-          responseMimeType: "application/json",
-          responseJsonSchema: SCHEMA,
-          temperature: 0.2,
-        },
-      });
-      try {
-        localStorage.setItem(MODEL_KEY, model);
-      } catch {
-        /* ignore */
-      }
-      if (res.promptFeedback?.blockReason) {
-        throw new AnalysisError("The AI declined to analyze this. Try a different photo or description.");
-      }
-      const raw = res.text;
-      if (!raw) throw new AnalysisError("The AI didn't return an answer. Please try again.");
+      const raw = await generate(ai, model, parts);
+      writeStorage(MODEL_KEY, model);
       return normalize(raw);
     } catch (err) {
       if (err instanceof AnalysisError) throw err;
@@ -122,13 +101,126 @@ export async function analyzeMeal(opts: {
       break;
     }
   }
+  if (remembered) removeStorage(MODEL_KEY);
+  if (lastError instanceof ApiError && modelUnavailable(lastError)) {
+    removeStorage(LIST_KEY); // ask Google for a fresh model list next time
+    throw new AnalysisError(
+      lastError.status === 429
+        ? "Your key has no free AI quota right now. Wait a few minutes and try again, or try again tomorrow."
+        : "Google couldn't find a free AI model for your key. Make sure the key was made at aistudio.google.com/apikey, then try again.",
+    );
+  }
   throw new AnalysisError(describeApiError(lastError));
 }
 
-// 404 = model retired; 429 with "limit: 0" = this model has no free quota for this key.
+type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
+
+/** One model call. Uses Google's structured JSON mode; if a model rejects that, retries with plain JSON instructions. */
+async function generate(ai: GoogleGenAI, model: string, parts: Part[]): Promise<string> {
+  const read = (res: Awaited<ReturnType<typeof ai.models.generateContent>>) => {
+    if (res.promptFeedback?.blockReason) {
+      throw new AnalysisError("The AI declined to analyze this. Try a different photo or description.");
+    }
+    const raw = res.text;
+    if (!raw) throw new AnalysisError("The AI didn't return an answer. Please try again.");
+    return raw;
+  };
+  const plainModels = (readStorage(PLAIN_KEY) || "").split(",");
+  if (!plainModels.includes(model)) {
+    try {
+      return read(
+        await ai.models.generateContent({
+          model,
+          contents: [{ role: "user", parts }],
+          config: { systemInstruction: SYSTEM, responseMimeType: "application/json", responseJsonSchema: SCHEMA, temperature: 0.2 },
+        }),
+      );
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 400 && /schema|json|mime/i.test(err.message))) throw err;
+      writeStorage(PLAIN_KEY, [...plainModels.filter(Boolean), model].join(",")); // skip structured mode next time
+    }
+  }
+  return read(
+    await ai.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [...parts, { text: `Reply with only JSON matching this schema, no other text:\n${JSON.stringify(SCHEMA)}` }] }],
+      config: { systemInstruction: SYSTEM, temperature: 0.2 },
+    }),
+  );
+}
+
+const LIST_KEY = "fc.models.v2";
+const PLAIN_KEY = "fc.plainmodels.v1"; // models that rejected structured JSON mode
+const LIST_MAX_AGE = 3 * 24 * 3600 * 1000;
+
+/**
+ * Asks Google which models this key can use, and ranks them: newest Flash first (fast and on the
+ * free tier), then Flash-Lite. Cached for a few days. Returns [] if the list can't be fetched.
+ */
+async function availableModels(ai: GoogleGenAI, apiKey: string): Promise<string[]> {
+  const keyTag = apiKey.slice(-6);
+  try {
+    const cached = JSON.parse(readStorage(LIST_KEY) || "null") as { at: number; key: string; models: string[] } | null;
+    if (cached && cached.key === keyTag && Date.now() - cached.at < LIST_MAX_AGE && cached.models.length) return cached.models;
+  } catch {
+    /* ignore bad cache */
+  }
+  const names: string[] = [];
+  try {
+    const pager = await ai.models.list({ config: { pageSize: 100 } });
+    for await (const m of pager) {
+      const name = (m.name ?? "").replace(/^models\//, "");
+      const actions = m.supportedActions ?? [];
+      if (!name.startsWith("gemini") || (actions.length && !actions.includes("generateContent"))) continue;
+      if (/image|tts|audio|live|embed|robotics|transcribe|omni|computer|customtools|native|banana|lyria/i.test(name)) continue;
+      if (!/flash/i.test(name)) continue; // Pro models usually have no free tier
+      names.push(name);
+    }
+  } catch {
+    return [];
+  }
+  const version = (n: string) => parseFloat(n.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? "0");
+  const score = (n: string) => {
+    if (n === "gemini-flash-latest") return 1000;
+    if (n === "gemini-flash-lite-latest") return 900;
+    let s = version(n) * 10 + (/lite/.test(n) ? 0 : 100);
+    if (/preview|exp/.test(n)) s -= 5;
+    if (/-\d{3}$|-\d{2}-\d{4}$/.test(n)) s -= 2; // pinned snapshots after the plain name
+    return s;
+  };
+  const ranked = [...new Set(names)].sort((a, b) => score(b) - score(a));
+  if (ranked.length) writeStorage(LIST_KEY, JSON.stringify({ at: Date.now(), key: keyTag, models: ranked }));
+  return ranked;
+}
+
+function readStorage(k: string): string | null {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+function writeStorage(k: string, v: string) {
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* ignore */
+  }
+}
+function removeStorage(k: string) {
+  try {
+    localStorage.removeItem(k);
+  } catch {
+    /* ignore */
+  }
+}
+
+// 404 = model missing or retired; 429 with "limit: 0" = this model has no free quota for this key;
+// 400 "not supported/not found" = this model can't do this kind of request.
 function modelUnavailable(err: unknown): boolean {
   if (!(err instanceof ApiError)) return false;
   if (err.status === 404) return true;
+  if (err.status === 400 && /not (found|supported)|is not available|unsupported model/i.test(err.message)) return true;
   return err.status === 429 && /limit:\s*0\b/.test(err.message);
 }
 
