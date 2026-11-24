@@ -667,3 +667,5 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.45); }
 @media (prefers-reduced-motion: reduce) {
   .an-photo, .an-grid, .an-beam, .an-sparkle, .an-center, .an-orbit, .an-orbit span, .an-dots i { animation: none !important; }
 }
+.ob-sub { margin: 6px 0 -6px; font-size: 19px; }
+.ex-pick { display: flex; flex-wrap: wrap; gap: 8px; }

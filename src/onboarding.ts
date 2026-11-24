@@ -1,6 +1,6 @@
 import { LANGUAGES, getLanguage, locale, setLanguage, t, type Lang } from "./i18n";
-import { ACTIVITIES, GOALS, GOAL_EMOJI, KG_PER_LB, activityDesc, activityLabel, bmi, fmtEnergy, fmtNum, fmtWater, fmtWeight, goalAllowed, goalDesc, goalEta, goalLabel, makePlan, paceOptions, weightToKg, weightValue } from "./nutrition";
-import type { Activity, Goal, Profile, Sex, Units } from "./store";
+import { EXERCISE_EXTRA, GOALS, GOAL_EMOJI, INTENSITIES, KG_PER_LB, MOVEMENTS, exerciseLabel, intensityLabel, migrateActivity, movementDesc, movementLabel, bmi, fmtEnergy, fmtNum, fmtWater, fmtWeight, goalAllowed, goalDesc, goalEta, goalLabel, makePlan, paceOptions, weightToKg, weightValue } from "./nutrition";
+import type { Goal, Intensity, Movement, Profile, Sex, Units } from "./store";
 import { h, hideToast, segmented, toast } from "./ui";
 
 export interface OnboardingResult {
@@ -21,7 +21,8 @@ export function runOnboarding(opts: {
 }) {
   const p: Profile = opts.profile
     ? { ...opts.profile }
-    : { name: "", sex: "female", age: 0, heightCm: 0, weightKg: 0, activity: "light", goal: "maintain", paceKgPerWeek: 0.5 };
+    : { name: "", sex: "female", age: 0, heightCm: 0, weightKg: 0, activity: "light", movement: "desk", exercise: 1, intensity: "moderate", goal: "maintain", paceKgPerWeek: 0.5 };
+  if (!p.movement) Object.assign(p, migrateActivity(p.activity)); // older profiles
   const units: Units = { ...opts.units };
   let apiKey = opts.apiKey;
 
@@ -181,14 +182,52 @@ export function runOnboarding(opts: {
 
   steps.push({
     render: () => [
-      h("h2", {}, t("activityTitle")),
-      h("p", { class: "muted" }, t("activityDesc")),
-      choiceCards<Activity>(
-        ACTIVITIES.map((k) => ({ value: k, title: activityLabel(k), desc: activityDesc(k) })),
-        p.activity,
-        (v) => (p.activity = v),
+      h("h2", {}, t("movementTitle")),
+      h("p", { class: "muted" }, t("movementDesc")),
+      choiceCards<Movement>(
+        MOVEMENTS.map((k) => ({ value: k, title: movementLabel(k), desc: movementDesc(k), emoji: { desk: "🪑", light: "🚶", onfeet: "🧍", physical: "🏗️" }[k] })),
+        p.movement!,
+        (v) => (p.movement = v),
       ),
     ],
+  });
+
+  steps.push({
+    render: () => {
+      const intensityBox = h("div", { class: "stack" });
+      const drawIntensity = () =>
+        intensityBox.replaceChildren(
+          ...(p.exercise
+            ? [
+                h("h3", { class: "ob-sub" }, t("intensityTitle")),
+                choiceCards<Intensity>(
+                  INTENSITIES.map((k) => ({ value: k, title: intensityLabel(k), emoji: { light: "🧘", moderate: "🏋️", hard: "🔥" }[k] })),
+                  p.intensity ?? "moderate",
+                  (v) => (p.intensity = v),
+                ),
+              ]
+            : []),
+        );
+      drawIntensity();
+      return [
+        h("h2", {}, t("exerciseTitle")),
+        h("p", { class: "muted" }, t("exerciseDesc")),
+        h(
+          "div",
+          { class: "ex-pick", role: "radiogroup", "aria-label": t("exerciseTitle") },
+          ...EXERCISE_EXTRA.map((_, n) => {
+            const b = h("button", { type: "button", class: "lang-chip", role: "radio", "aria-checked": String((p.exercise ?? 0) === n) }, exerciseLabel(n));
+            b.addEventListener("click", () => {
+              p.exercise = n;
+              b.parentElement!.querySelectorAll(".lang-chip").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+              drawIntensity();
+            });
+            return b;
+          }),
+        ),
+        intensityBox,
+      ];
+    },
   });
 
   steps.push({

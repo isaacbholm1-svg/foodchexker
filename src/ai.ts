@@ -74,10 +74,6 @@ export async function analyzeMeal(opts: {
   image?: { base64: string; mediaType: "image/jpeg" };
   text?: string;
 }): Promise<Analysis> {
-  // v1beta has every model (the "-latest" names only exist there) and the structured JSON format.
-  const ai = new GoogleGenAI({ apiKey: opts.apiKey, apiVersion: "v1beta", httpOptions: { timeout: REQUEST_TIMEOUT_MS } });
-  const started = Date.now();
-
   const parts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[] = [];
   if (opts.image) parts.push({ inlineData: { mimeType: opts.image.mediaType, data: opts.image.base64 } });
   const text = opts.text?.trim();
@@ -89,9 +85,19 @@ export async function analyzeMeal(opts: {
       : "Estimate the nutrition for this meal.",
   });
   parts.push({ text: `Write meal_name, the food names, portions and notes in ${languageEnglishName()}.` });
+  return normalize(await callGemini(opts.apiKey, parts, SYSTEM, SCHEMA));
+}
 
+/**
+ * Sends a request to the best free Gemini model, with retries and fallbacks:
+ * structured JSON first, a plain request if that is rejected or Google is busy, then the next model.
+ */
+async function callGemini(apiKey: string, parts: Part[], system: string, schema: object): Promise<string> {
+  // v1beta has every model (the "-latest" names only exist there) and the structured JSON format.
+  const ai = new GoogleGenAI({ apiKey, apiVersion: "v1beta", httpOptions: { timeout: REQUEST_TIMEOUT_MS } });
+  const started = Date.now();
   const remembered = readStorage(MODEL_KEY);
-  const listed = await availableModels(ai, opts.apiKey);
+  const listed = await availableModels(ai, apiKey);
   const candidates = listed.length ? listed : MODELS;
   const order = [...new Set([...(remembered && candidates.includes(remembered) ? [remembered] : []), ...candidates])].slice(0, 5);
 
@@ -104,12 +110,12 @@ export async function analyzeMeal(opts: {
     const modes: Mode[] = plainModels.includes(model) ? ["plain", "plain"] : ["schema", "plain"];
     for (let i = 0; i < modes.length; i++) {
       try {
-        const raw = await generate(ai, model, parts, modes[i]);
+        const raw = await generate(ai, model, parts, modes[i], system, schema);
         writeStorage(MODEL_KEY, model);
         if (modes[i] === "plain" && i === 1 && schemaRejected(lastError)) {
           writeStorage(PLAIN_KEY, [...plainModels.filter(Boolean), model].join(",")); // skip structured mode next time
         }
-        return normalize(raw);
+        return raw;
       } catch (err) {
         if (err instanceof AnalysisError) throw err;
         console.warn("[FoodChecker] AI call failed", model, modes[i], err);
@@ -172,18 +178,18 @@ function tryNextModel(err: unknown): boolean {
 }
 
 /** One model call, either with Google's structured JSON mode or with plain JSON instructions. */
-async function generate(ai: GoogleGenAI, model: string, parts: Part[], mode: Mode): Promise<string> {
+async function generate(ai: GoogleGenAI, model: string, parts: Part[], mode: Mode, system: string, schema: object): Promise<string> {
   const res =
     mode === "schema"
       ? await ai.models.generateContent({
           model,
           contents: [{ role: "user", parts }],
-          config: { systemInstruction: SYSTEM, responseMimeType: "application/json", responseJsonSchema: SCHEMA, temperature: 0.2 },
+          config: { systemInstruction: system, responseMimeType: "application/json", responseJsonSchema: schema, temperature: 0.2 },
         })
       : await ai.models.generateContent({
           model,
-          contents: [{ role: "user", parts: [...parts, { text: `Reply with only JSON matching this schema, no other text:\n${JSON.stringify(SCHEMA)}` }] }],
-          config: { systemInstruction: SYSTEM, temperature: 0.2 },
+          contents: [{ role: "user", parts: [...parts, { text: `Reply with only JSON matching this schema, no other text:\n${JSON.stringify(schema)}` }] }],
+          config: { systemInstruction: system, temperature: 0.2 },
         });
   if (res.promptFeedback?.blockReason) {
     throw new AnalysisError(t("aiDeclined"));
@@ -321,4 +327,75 @@ function normalize(raw: string): Analysis {
         sugar_g: n(i.sugar_g),
       })),
   };
+}
+
+// ---------------- AI meal ideas ----------------
+
+export interface Idea {
+  emoji: string;
+  title: string;
+  detail: string;
+  calories: number;
+}
+
+const IDEAS_SCHEMA = {
+  type: "object",
+  properties: {
+    ideas: {
+      type: "array",
+      description: "Exactly 3 ideas",
+      items: {
+        type: "object",
+        properties: {
+          emoji: { type: "string", description: "One food emoji" },
+          title: { type: "string", description: "Short name of the meal or snack, max 6 words" },
+          detail: { type: "string", description: "One short sentence: why it fits right now, or a quick how-to" },
+          calories: { type: "number", description: "Approximate kcal" },
+        },
+        required: ["emoji", "title", "detail", "calories"],
+      },
+    },
+  },
+  required: ["ideas"],
+};
+
+const IDEAS_SYSTEM = `You are a friendly dietitian inside a calorie-tracking app. Suggest practical, everyday meal or snack ideas that fit what the person still needs today.
+Rules: ideas must be ordinary foods that are easy to get; respect the remaining calories (never suggest skipping meals or eating very little); favour protein, fiber, fruit and vegetables where they are missing; keep the tone positive and never shame. If the person is under 18, focus on balanced, growth-friendly food. If the remaining calories are negative, suggest light, filling options like vegetables or soup and a glass of water, not "don't eat".`;
+
+/** Three personal meal or snack ideas for the rest of the day. */
+export async function suggestIdeas(opts: {
+  apiKey: string;
+  hour: number;
+  goal: string;
+  age?: number;
+  kcalLeft: number;
+  proteinLeft: number;
+  fiberLeft: number;
+  nextMeal: string;
+  eatenToday: string[];
+}): Promise<Idea[]> {
+  const text = [
+    `Time of day: ${opts.hour}:00. Next meal: ${opts.nextMeal}. Goal: ${opts.goal}.${opts.age ? ` Age: ${opts.age}.` : ""}`,
+    `Still needed today: about ${Math.round(opts.kcalLeft)} kcal, ${Math.round(opts.proteinLeft)} g protein, ${Math.round(opts.fiberLeft)} g fiber.`,
+    opts.eatenToday.length ? `Already eaten today: ${opts.eatenToday.join(", ")}.` : "Nothing eaten yet today.",
+    `Give 3 ideas. Write everything in ${languageEnglishName()}.`,
+  ].join("\n");
+  const raw = await callGemini(opts.apiKey, [{ text }], IDEAS_SYSTEM, IDEAS_SCHEMA);
+  let data: { ideas?: unknown };
+  try {
+    data = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+  } catch {
+    throw new AnalysisError(t("aiUnreadable"));
+  }
+  const list = Array.isArray(data.ideas) ? data.ideas : [];
+  return list
+    .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
+    .slice(0, 3)
+    .map((i) => ({
+      emoji: typeof i.emoji === "string" && i.emoji.length <= 8 ? i.emoji : "🍽️",
+      title: typeof i.title === "string" ? i.title.slice(0, 60) : "",
+      detail: typeof i.detail === "string" ? i.detail.slice(0, 180) : "",
+      calories: typeof i.calories === "number" && i.calories > 0 ? Math.round(i.calories) : 0,
+    }))
+    .filter((i) => i.title);
 }

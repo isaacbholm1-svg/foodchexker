@@ -4,7 +4,7 @@ import { LookupError, lookupBarcode, startScanner, type ScanControls } from "./b
 import { prepareImage } from "./image";
 import { motivation } from "./motivation";
 import { LANGUAGES, celebrateLines, detectLanguage, getLanguage, locale, setLanguage, t, type StringKey } from "./i18n";
-import { GOAL_EMOJI, activityLabel, energyValue, fmtEnergy, fmtHeight, fmtWater, fmtWeight, goalLabel, makePlan, weightToKg, weightValue } from "./nutrition";
+import { GOAL_EMOJI, activitySummary, energyValue, fmtEnergy, fmtHeight, fmtWater, fmtWeight, goalLabel, makePlan, weightToKg, weightValue } from "./nutrition";
 import { runOnboarding, type OnboardingResult } from "./onboarding";
 import { currentStreak, renderStats, type Range } from "./stats";
 import {
@@ -626,7 +626,7 @@ function renderSettings() {
             {},
             h("div", { class: "profile-name" }, p.name),
             h("div", { class: "muted small" }, `${p.age} · ${t(p.sex)} · ${fmtHeight(p.heightCm, u)} · ${fmtWeight(p.weightKg, u)}`),
-            h("div", { class: "muted small" }, `${GOAL_EMOJI[p.goal]} ${goalLabel(p.goal)} · ${activityLabel(p.activity)}`),
+            h("div", { class: "muted small" }, `${GOAL_EMOJI[p.goal]} ${goalLabel(p.goal)} · ${activitySummary(p)}`),
           ),
         )
       : h("p", { class: "muted" }, t("noProfile")),
