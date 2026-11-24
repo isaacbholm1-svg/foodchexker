@@ -1,4 +1,5 @@
-import { fmtEnergy, fmtWeight, energyValue, weightValue, goalEta } from "./nutrition";
+import { locale, t } from "./i18n";
+import { fmtEnergy, fmtNum, fmtWeight, energyValue, weightValue, goalEta } from "./nutrition";
 import { addDays, allEntries, allWeights, localDate, parseDate, type Entry, type Goal, type Settings } from "./store";
 import { h, s, segmented } from "./ui";
 
@@ -62,7 +63,7 @@ function onTarget(kcal: number, target: number, goal: Goal): boolean {
 
 export function renderStats(root: HTMLElement, settings: Settings, range: Range, onRange: (r: Range) => void, onLogWeight: () => void) {
   const u = settings.units;
-  const t = settings.targets;
+  const tg = settings.targets;
   const goal = settings.profile?.goal ?? "maintain";
   const today = localDate();
   const totals = dayTotals();
@@ -78,12 +79,14 @@ export function renderStats(root: HTMLElement, settings: Settings, range: Range,
       const date = parseDate(d);
       const v = totals.get(d)?.kcal ?? 0;
       const label =
-        range === "week" ? date.toLocaleDateString(undefined, { weekday: "narrow" }) : idx % 5 === 4 || idx === n - 1 ? String(date.getDate()) : "";
+        range === "week" ? date.toLocaleDateString(locale(), { weekday: "narrow" }) : idx % 5 === 4 || idx === n - 1 ? String(date.getDate()) : "";
       bars.push({
         key: d,
         label,
         value: v,
-        tip: `${date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}: ${v ? fmtEnergy(v, u) : "nothing logged"}`,
+        tip: v
+          ? t("dayTip", { date: date.toLocaleDateString(locale(), { weekday: "short", month: "short", day: "numeric" }), value: fmtEnergy(v, u) })
+          : t("nothingLoggedTip", { date: date.toLocaleDateString(locale(), { weekday: "short", month: "short", day: "numeric" }) }),
       });
     });
   } else {
@@ -95,9 +98,11 @@ export function renderStats(root: HTMLElement, settings: Settings, range: Range,
       const avg = days.length ? days.reduce((a, d) => a + d.kcal, 0) / days.length : 0;
       bars.push({
         key: prefix,
-        label: m.toLocaleDateString(undefined, { month: "narrow" }),
+        label: m.toLocaleDateString(locale(), { month: "narrow" }),
         value: avg,
-        tip: `${m.toLocaleDateString(undefined, { month: "long", year: "numeric" })}: ${days.length ? `${fmtEnergy(avg, u)}/day avg · ${days.length} days logged` : "nothing logged"}`,
+        tip: days.length
+          ? t("monthTip", { month: m.toLocaleDateString(locale(), { month: "long", year: "numeric" }), avg: fmtEnergy(avg, u), n: days.length })
+          : t("nothingLoggedTip", { date: m.toLocaleDateString(locale(), { month: "long", year: "numeric" }) }),
       });
     }
     const start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
@@ -107,47 +112,47 @@ export function renderStats(root: HTMLElement, settings: Settings, range: Range,
   const logged = rangeDays.map((d) => totals.get(d)).filter((d): d is DayTotal => !!d);
   const avg = (f: (d: DayTotal) => number) => (logged.length ? logged.reduce((a, d) => a + f(d), 0) / logged.length : 0);
   const avgKcal = avg((d) => d.kcal);
-  const hits = logged.filter((d) => onTarget(d.kcal, t.calories, goal)).length;
+  const hits = logged.filter((d) => onTarget(d.kcal, tg.calories, goal)).length;
 
   root.replaceChildren(
-    h("h1", { class: "page-title" }, "Progress"),
+    h("h1", { class: "page-title" }, t("progress")),
     segmented<Range>(
       [
-        { value: "week", label: "Week" },
-        { value: "month", label: "Month" },
-        { value: "year", label: "Year" },
+        { value: "week", label: t("week") },
+        { value: "month", label: t("month") },
+        { value: "year", label: t("year") },
       ],
       range,
       onRange,
-      "Time range",
+      t("timeRange"),
     ),
     h(
       "div",
       { class: "stat-tiles" },
-      statTile("Avg per day", logged.length ? fmtEnergy(avgKcal, u, false) : "–", u.energy),
-      statTile("On target", logged.length ? `${hits}/${logged.length}` : "–", "days"),
-      statTile("Streak", String(currentStreak()), `best ${bestStreak()}`),
-      statTile("Meals", String(logged.reduce((a, d) => a + d.meals, 0)), "logged"),
+      statTile(t("avgPerDay"), logged.length ? fmtEnergy(avgKcal, u, false) : "–", u.energy),
+      statTile(t("onTarget"), logged.length ? `${hits}/${logged.length}` : "–", t("days")),
+      statTile(t("streak"), String(currentStreak()), t("best", { n: bestStreak() })),
+      statTile(t("meals"), String(logged.reduce((a, d) => a + d.meals, 0)), t("logged")),
     ),
     h(
       "section",
       { class: "card" },
-      h("div", { class: "card-head" }, h("h3", {}, range === "year" ? "Average calories per day, by month" : "Calories per day"), h("span", { class: "legend-goal" }, "Goal")),
-      barChart(bars, energyValue(t.calories, u), (v) => Math.round(energyValue(v, u))),
+      h("div", { class: "card-head" }, h("h3", {}, range === "year" ? t("chartMonthly") : t("chartDaily")), h("span", { class: "legend-goal" }, t("goal"))),
+      barChart(bars, energyValue(tg.calories, u), (v) => Math.round(energyValue(v, u))),
     ),
     h(
       "section",
       { class: "card" },
-      h("h3", {}, "Average macros"),
+      h("h3", {}, t("avgMacros")),
       logged.length
         ? h(
             "div",
             { class: "macro-avgs" },
-            macroRow("Protein", avg((d) => d.protein), t.protein, "protein"),
-            macroRow("Carbs", avg((d) => d.carbs), t.carbs, "carbs"),
-            macroRow("Fat", avg((d) => d.fat), t.fat, "fat"),
+            macroRow(t("protein"), avg((d) => d.protein), tg.protein, "protein"),
+            macroRow(t("carbs"), avg((d) => d.carbs), tg.carbs, "carbs"),
+            macroRow(t("fat"), avg((d) => d.fat), tg.fat, "fat"),
           )
-        : h("p", { class: "muted" }, "Log some meals to see your averages."),
+        : h("p", { class: "muted" }, t("logToSeeAvgs")),
     ),
     weightCard(settings, rangeDays[0], onLogWeight),
     topFoods(rangeDays[0]),
@@ -169,7 +174,7 @@ function macroRow(label: string, val: number, target: number, cls: string) {
 }
 
 function compact(v: number): string {
-  return v >= 10000 ? `${Math.round(v / 1000)}k` : Math.round(v).toLocaleString();
+  return v >= 10000 ? `${Math.round(v / 1000)}k` : fmtNum(v);
 }
 
 function niceMax(v: number): number {
@@ -215,7 +220,7 @@ function barChart(bars: { label: string; tip: string; value: number }[], goal: n
   const slot = plotW / bars.length;
   const bw = Math.max(3, slot - 2); // 2px gap between bars
 
-  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "Calories chart" });
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": t("caloriesChart") });
   for (const g of [0, max / 2, max]) {
     svg.append(s("line", { x1: padL, x2: W, y1: y(g), y2: y(g), class: "grid" }), s("text", { x: padL - 6, y: y(g) + 4, class: "axis", "text-anchor": "end" }, compact(g)));
   }
@@ -246,10 +251,10 @@ function weightCard(settings: Settings, from: string, onLogWeight: () => void): 
   const card = h(
     "section",
     { class: "card" },
-    h("div", { class: "card-head" }, h("h3", {}, "Weight"), h("button", { type: "button", class: "btn small", onclick: onLogWeight }, "+ Log weight")),
+    h("div", { class: "card-head" }, h("h3", {}, t("weight")), h("button", { type: "button", class: "btn small", onclick: onLogWeight }, t("logWeightPlus"))),
   );
   if (!latest) {
-    card.append(h("p", { class: "muted" }, "Log your weight now and then to see your trend here."));
+    card.append(h("p", { class: "muted" }, t("weightEmpty")));
     return card;
   }
   const first = pts[0] ?? latest;
@@ -258,14 +263,14 @@ function weightCard(settings: Settings, from: string, onLogWeight: () => void): 
     h(
       "div",
       { class: "weight-summary" },
-      h("div", {}, h("div", { class: "stat-val" }, fmtWeight(latest.kg, u)), h("div", { class: "muted small" }, "latest")),
-      pts.length > 1 ? h("div", {}, h("div", { class: "stat-val" }, `${change > 0 ? "+" : change < 0 ? "−" : ""}${fmtWeight(Math.abs(change), u)}`), h("div", { class: "muted small" }, "change in this range")) : null,
-      p?.goalWeightKg ? h("div", {}, h("div", { class: "stat-val" }, fmtWeight(p.goalWeightKg, u)), h("div", { class: "muted small" }, "goal")) : null,
+      h("div", {}, h("div", { class: "stat-val" }, fmtWeight(latest.kg, u)), h("div", { class: "muted small" }, t("latest"))),
+      pts.length > 1 ? h("div", {}, h("div", { class: "stat-val" }, `${change > 0 ? "+" : change < 0 ? "−" : ""}${fmtWeight(Math.abs(change), u)}`), h("div", { class: "muted small" }, t("changeInRange"))) : null,
+      p?.goalWeightKg ? h("div", {}, h("div", { class: "stat-val" }, fmtWeight(p.goalWeightKg, u)), h("div", { class: "muted small" }, t("goalLower"))) : null,
     ),
   );
   if (pts.length >= 2) card.append(lineChart(pts, p?.goalWeightKg, settings));
   const eta = p ? goalEta(p) : null;
-  if (eta && p?.goalWeightKg) card.append(h("p", { class: "muted small" }, `📅 On your plan, you'd reach your goal around ${eta.toLocaleDateString(undefined, { month: "long", year: "numeric" })}.`));
+  if (eta && p?.goalWeightKg) card.append(h("p", { class: "muted small" }, t("etaStats", { date: eta.toLocaleDateString(locale(), { month: "long", year: "numeric" }) })));
   return card;
 }
 
@@ -289,9 +294,9 @@ function lineChart(pts: { date: string; kg: number }[], goalKg: number | undefin
   const x = (d: string) => padL + ((parseDate(d).getTime() - t0) / Math.max(1, t1 - t0)) * (W - padL - 8);
   const y = (v: number) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
 
-  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "Weight chart" });
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": t("weightChart") });
   for (const g of [lo, (lo + hi) / 2, hi]) {
-    svg.append(s("line", { x1: padL, x2: W, y1: y(g), y2: y(g), class: "grid" }), s("text", { x: padL - 6, y: y(g) + 4, class: "axis", "text-anchor": "end" }, g.toFixed(0)));
+    svg.append(s("line", { x1: padL, x2: W, y1: y(g), y2: y(g), class: "grid" }), s("text", { x: padL - 6, y: y(g) + 4, class: "axis", "text-anchor": "end" }, fmtNum(g)));
   }
   if (goalKg) svg.append(s("line", { x1: padL, x2: W, y1: y(weightValue(goalKg, u)), y2: y(weightValue(goalKg, u)), class: "goal-line" }));
   svg.append(s("polyline", { points: pts.map((p, i) => `${x(p.date)},${y(vals[i])}`).join(" "), class: "line-mark" }));
@@ -301,15 +306,15 @@ function lineChart(pts: { date: string; kg: number }[], goalKg: number | undefin
     const cy = y(vals[i]);
     if (pts.length <= 40 || i === pts.length - 1) svg.append(s("circle", { cx, cy, r: 4, class: "dot-mark" }));
     const hit = s("circle", { cx, cy, r: 14, class: "hit" });
-    const on = () => show(`${parseDate(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}: ${fmtWeight(p.kg, u)}`, cx, cy);
+    const on = () => show(`${parseDate(p.date).toLocaleDateString(locale(), { month: "short", day: "numeric" })}: ${fmtWeight(p.kg, u)}`, cx, cy);
     hit.addEventListener("pointerenter", on);
     hit.addEventListener("click", on);
     hit.addEventListener("pointerleave", () => show(null));
     svg.append(hit);
   });
   svg.append(
-    s("text", { x: padL, y: H - 4, class: "axis" }, parseDate(pts[0].date).toLocaleDateString(undefined, { month: "short", day: "numeric" })),
-    s("text", { x: W - 4, y: H - 4, class: "axis", "text-anchor": "end" }, parseDate(pts[pts.length - 1].date).toLocaleDateString(undefined, { month: "short", day: "numeric" })),
+    s("text", { x: padL, y: H - 4, class: "axis" }, parseDate(pts[0].date).toLocaleDateString(locale(), { month: "short", day: "numeric" })),
+    s("text", { x: W - 4, y: H - 4, class: "axis", "text-anchor": "end" }, parseDate(pts[pts.length - 1].date).toLocaleDateString(locale(), { month: "short", day: "numeric" })),
   );
   wrap.prepend(svg);
   return wrap;
@@ -331,9 +336,9 @@ function topFoods(from: string): HTMLElement {
   return h(
     "section",
     { class: "card" },
-    h("h3", {}, "Most eaten"),
+    h("h3", {}, t("mostEaten")),
     top.length
       ? h("ol", { class: "top-foods" }, ...top.map((f) => h("li", {}, h("span", {}, f.name), h("span", { class: "muted" }, `${f.n}×`))))
-      : h("p", { class: "muted" }, "Nothing logged in this range yet."),
+      : h("p", { class: "muted" }, t("nothingInRange")),
   );
 }

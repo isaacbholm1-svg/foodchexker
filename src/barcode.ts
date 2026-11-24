@@ -1,5 +1,6 @@
 // Barcode scanning (camera) + product lookup in Open Food Facts, a free, open food database.
 import type { Analysis, FoodItem } from "./ai";
+import { getLanguage, t } from "./i18n";
 
 export interface ScanControls {
   stop: () => void;
@@ -51,22 +52,22 @@ const num = (v: unknown): number | null => {
 /** Looks up a barcode. Returns null if the product isn't in the database. */
 export async function lookupBarcode(code: string): Promise<{ analysis: Analysis; image?: string } | null> {
   const clean = code.replace(/\D/g, "");
-  if (clean.length < 6 || clean.length > 14) throw new LookupError("That doesn't look like a food barcode.");
-  const fields = "product_name,product_name_en,generic_name,brands,serving_size,serving_quantity,nutriments,image_front_small_url,image_small_url";
+  if (clean.length < 6 || clean.length > 14) throw new LookupError(t("badBarcode"));
+  const fields = `product_name,product_name_${getLanguage()},product_name_en,generic_name,brands,serving_size,serving_quantity,nutriments,image_front_small_url,image_small_url`;
   let res: Response;
   try {
     res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${clean}.json?fields=${fields}`);
   } catch {
-    throw new LookupError("Couldn't reach the food database. Check your internet connection.");
+    throw new LookupError(t("offOffline"));
   }
   if (res.status === 404) return null;
-  if (!res.ok) throw new LookupError("The food database is busy. Try again in a moment.");
-  const data = (await res.json()) as { status?: number; product?: OffProduct };
+  if (!res.ok) throw new LookupError(t("offBusy"));
+  const data = (await res.json()) as { status?: number; product?: OffProduct & Record<string, unknown> };
   if (data.status !== 1 || !data.product) return null;
   return toAnalysis(data.product);
 }
 
-function toAnalysis(p: OffProduct): { analysis: Analysis; image?: string } | null {
+function toAnalysis(p: OffProduct & Record<string, unknown>): { analysis: Analysis; image?: string } | null {
   const n = p.nutriments ?? {};
   let kcal100 = num(n["energy-kcal_100g"]);
   if (kcal100 == null) {
@@ -84,7 +85,8 @@ function toAnalysis(p: OffProduct): { analysis: Analysis; image?: string } | nul
     sugar_g: num(n["sugars_100g"]) ?? 0,
   };
 
-  const name = (p.product_name || p.product_name_en || p.generic_name || "Packaged food").trim();
+  const local = p[`product_name_${getLanguage()}`];
+  const name = ((typeof local === "string" && local) || p.product_name || p.product_name_en || p.generic_name || t("packagedFood")).trim();
   const brand = (p.brands || "").split(",")[0].trim();
   const title = brand && !name.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${name}` : name;
 
@@ -94,7 +96,7 @@ function toAnalysis(p: OffProduct): { analysis: Analysis; image?: string } | nul
   const r1 = (x: number) => Math.round(x * 10) / 10;
   const item: FoodItem = {
     name: title,
-    portion: servingG ? `1 serving (${p.serving_size?.trim() || `${grams} g`})` : "100 g",
+    portion: servingG ? t("servingPortion", { size: p.serving_size?.trim() || `${grams} g` }) : "100 g",
     calories: Math.round(per100.calories * f),
     protein_g: r1(per100.protein_g * f),
     carbs_g: r1(per100.carbs_g * f),
@@ -108,7 +110,7 @@ function toAnalysis(p: OffProduct): { analysis: Analysis; image?: string } | nul
       meal_name: title,
       items: [item],
       confidence: "high",
-      notes: `From the package data (Open Food Facts). Per 100 g: ${Math.round(per100.calories)} kcal · protein ${r1(per100.protein_g)} g · carbs ${r1(per100.carbs_g)} g · fat ${r1(per100.fat_g)} g. Change servings if you had more or less.`,
+      notes: t("offNote", { kcal: Math.round(per100.calories), p: r1(per100.protein_g), c: r1(per100.carbs_g), f: r1(per100.fat_g) }),
     },
     image,
   };

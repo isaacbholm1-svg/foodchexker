@@ -101,7 +101,7 @@ function dayLabel(date: string): string {
 function renderToday() {
   const root = $("view-today");
   const u = U();
-  const t = settings.targets;
+  const tg = settings.targets;
   const isToday = viewDate === localDate();
   const entries = entriesFor(viewDate);
   const totals = sum(entries.flatMap((e) => e.items));
@@ -125,11 +125,11 @@ function renderToday() {
         goal: settings.profile.goal,
         hour: new Date().getHours(),
         eaten: totals.calories,
-        target: t.calories,
+        target: tg.calories,
         protein: totals.protein_g,
-        proteinTarget: t.protein,
+        proteinTarget: tg.protein,
         waterMl,
-        waterTarget: settings.showWater ? t.waterMl : 0,
+        waterTarget: settings.showWater ? tg.waterMl : 0,
         streak: currentStreak(),
         entriesToday: entries.length,
         isToday,
@@ -147,8 +147,8 @@ function renderToday() {
   }
 
   // --- summary ring + macros ---
-  const left = t.calories - totals.calories;
-  const frac = Math.min(totals.calories / (t.calories || 1), 1);
+  const left = tg.calories - totals.calories;
+  const frac = Math.min(totals.calories / (tg.calories || 1), 1);
   const C = 2 * Math.PI * 52;
   const ringSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   ringSvg.setAttribute("viewBox", "0 0 120 120");
@@ -174,10 +174,10 @@ function renderToday() {
     h(
       "div",
       { class: "summary-side" },
-      h("div", { class: "eaten" }, `${fmtEnergy(totals.calories, u, false)} / ${fmtEnergy(t.calories, u)}`),
-      macro("Protein", "protein", totals.protein_g, t.protein),
-      macro("Carbs", "carbs", totals.carbs_g, t.carbs),
-      macro("Fat", "fat", totals.fat_g, t.fat),
+      h("div", { class: "eaten" }, `${fmtEnergy(totals.calories, u, false)} / ${fmtEnergy(tg.calories, u)}`),
+      macro("Protein", "protein", totals.protein_g, tg.protein),
+      macro("Carbs", "carbs", totals.carbs_g, tg.carbs),
+      macro("Fat", "fat", totals.fat_g, tg.fat),
     ),
   );
 
@@ -214,11 +214,11 @@ function renderToday() {
   let waterCard: HTMLElement | null = null;
   if (settings.showWater) {
     const glasses = Math.round(waterMl / settings.glassMl);
-    const goalGlasses = Math.max(1, Math.round(t.waterMl / settings.glassMl));
+    const goalGlasses = Math.max(1, Math.round(tg.waterMl / settings.glassMl));
     waterCard = h(
       "section",
       { class: "card water" },
-      h("div", { class: "card-head" }, h("h3", {}, "💧 Water"), h("span", { class: "muted" }, `${fmtWater(waterMl, u)} / ${fmtWater(t.waterMl, u)}`)),
+      h("div", { class: "card-head" }, h("h3", {}, "💧 Water"), h("span", { class: "muted" }, `${fmtWater(waterMl, u)} / ${fmtWater(tg.waterMl, u)}`)),
       h(
         "div",
         { class: "water-row" },
@@ -231,7 +231,7 @@ function renderToday() {
             "aria-label": "Add a glass",
             onclick: () => {
               setWater(viewDate, waterMl + settings.glassMl);
-              if (waterMl + settings.glassMl >= t.waterMl && waterMl < t.waterMl) toast(`💧 Water goal reached${settings.profile ? `, ${settings.profile.name}` : ""}!`);
+              if (waterMl + settings.glassMl >= tg.waterMl && waterMl < tg.waterMl) toast(`💧 Water goal reached${settings.profile ? `, ${settings.profile.name}` : ""}!`);
               render();
             },
           },
@@ -272,7 +272,7 @@ function renderToday() {
 }
 
 function renderEntry(e: Entry) {
-  const t = sum(e.items);
+  const tot = sum(e.items);
   const u = U();
   const details = h(
     "div",
@@ -289,8 +289,8 @@ function renderEntry(e: Entry) {
     "button",
     { class: "entry", "aria-expanded": "false" },
     e.thumb ? h("img", { class: "thumb", src: e.thumb, alt: "" }) : h("div", { class: "thumb placeholder" }, "🍽"),
-    h("div", { class: "entry-main" }, h("div", { class: "entry-name" }, e.name), h("div", { class: "muted small" }, `P ${round(t.protein_g)} · C ${round(t.carbs_g)} · F ${round(t.fat_g)} g`)),
-    h("div", { class: "entry-kcal" }, fmtEnergy(t.calories, u, false)),
+    h("div", { class: "entry-main" }, h("div", { class: "entry-name" }, e.name), h("div", { class: "muted small" }, `P ${round(tot.protein_g)} · C ${round(tot.carbs_g)} · F ${round(tot.fat_g)} g`)),
+    h("div", { class: "entry-kcal" }, fmtEnergy(tot.calories, u, false)),
   );
   row.addEventListener("click", () => {
     const open = row.getAttribute("aria-expanded") === "true";
@@ -385,10 +385,10 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
       }),
     );
     if (!items.length) itemsBox.append(h("p", { class: "muted" }, "No food items. Cancel and try another photo or description."));
-    const t = sum(items.map(scaled));
+    const tot = sum(items.map(scaled));
     totalsBox.replaceChildren(
-      h("div", { class: "tot-kcal" }, fmtEnergy(t.calories, u, false), h("small", {}, ` ${u.energy}`)),
-      h("div", { class: "tot-macros" }, `Protein ${round(t.protein_g)} g · Carbs ${round(t.carbs_g)} g · Fat ${round(t.fat_g)} g`),
+      h("div", { class: "tot-kcal" }, fmtEnergy(tot.calories, u, false), h("small", {}, ` ${u.energy}`)),
+      h("div", { class: "tot-macros" }, `Protein ${round(tot.protein_g)} g · Carbs ${round(tot.carbs_g)} g · Fat ${round(tot.fat_g)} g`),
     );
     addBtn.disabled = !items.length;
   }
