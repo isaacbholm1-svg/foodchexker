@@ -7,6 +7,8 @@ import fr from "./fr";
 import it from "./it";
 import pt from "./pt";
 import nl from "./nl";
+import nb from "./nb";
+import da from "./da";
 
 export type StringKey = keyof typeof en.s;
 export type PoolKey = keyof typeof en.pools;
@@ -19,7 +21,7 @@ export interface Dict {
   friend: string;
 }
 
-export type Lang = "en" | "sv" | "fi" | "de" | "es" | "fr" | "it" | "pt" | "nl";
+export type Lang = "en" | "sv" | "fi" | "de" | "es" | "fr" | "it" | "pt" | "nl" | "nb" | "da";
 
 /** Language list shown in the picker: native name + English name (sent to the AI). */
 export const LANGUAGES: { code: Lang; name: string; english: string; flag: string; locale: string }[] = [
@@ -32,9 +34,11 @@ export const LANGUAGES: { code: Lang; name: string; english: string; flag: strin
   { code: "it", name: "Italiano", english: "Italian", flag: "🇮🇹", locale: "it-IT" },
   { code: "pt", name: "Português", english: "Brazilian Portuguese", flag: "🇧🇷", locale: "pt-BR" },
   { code: "nl", name: "Nederlands", english: "Dutch", flag: "🇳🇱", locale: "nl-NL" },
+  { code: "nb", name: "Norsk", english: "Norwegian (Bokmål)", flag: "🇳🇴", locale: "nb-NO" },
+  { code: "da", name: "Dansk", english: "Danish", flag: "🇩🇰", locale: "da-DK" },
 ];
 
-const DICTS: Record<Lang, Dict> = { en, sv, fi, de, es, fr, it, pt, nl };
+const DICTS: Record<Lang, Dict> = { en, sv, fi, de, es, fr, it, pt, nl, nb, da };
 
 let current: Lang = "en";
 
@@ -42,6 +46,7 @@ let current: Lang = "en";
 export function detectLanguage(): Lang {
   for (const tag of navigator.languages ?? [navigator.language]) {
     const base = tag.toLowerCase().split("-")[0];
+    if (base === "no" || base === "nn") return "nb";
     if (base in DICTS) return base as Lang;
   }
   return "en";

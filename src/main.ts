@@ -1,6 +1,7 @@
 import "./style.css";
 import { analyzeMeal, AnalysisError, suggestIdeas, type Analysis, type FoodItem, type Idea } from "./ai";
 import { renderChat } from "./chat";
+import { FEEDBACK_ACCESS_KEY } from "./config";
 import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
 import { confetti, countUp, replay } from "./fx";
 import { LookupError, lookupBarcode, startScanner, type ScanControls } from "./barcode";
@@ -1276,6 +1277,8 @@ function feedbackCard(): HTMLElement {
     );
   drawStars();
   const text = h("textarea", { class: "fb-text", rows: 4, placeholder: t("feedbackPh") });
+  const sendBtn = h("button", { class: "btn wide primary" }, t("sendFeedback"));
+  sendBtn.addEventListener("click", () => send());
   const send = async () => {
     const msg = text.value.trim();
     if (!msg) return toast(t("feedbackEmpty"));
@@ -1289,6 +1292,37 @@ function feedbackCard(): HTMLElement {
     ]
       .filter((l, i) => l || i > 1)
       .join("\n");
+    const done = () => {
+      toast(t("feedbackThanks"));
+      confetti({ count: 60 });
+      text.value = "";
+      rating = 0;
+      drawStars();
+    };
+    // Straight to the app owner's email, when a Web3Forms key is set up.
+    if (FEEDBACK_ACCESS_KEY) {
+      sendBtn.disabled = true;
+      sendBtn.textContent = "…";
+      try {
+        const res = await fetch("https://api.web3forms.com/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            access_key: FEEDBACK_ACCESS_KEY,
+            subject: `FoodChecker feedback: ${t(kind).replace(/^\S+\s/, "")}${rating ? ` (${rating}/5)` : ""}`,
+            from_name: settings.profile?.name ? `${settings.profile.name} (FoodChecker)` : "FoodChecker",
+            message: body,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success !== false) return done();
+      } catch {
+        /* fall back to the share sheet below */
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = t("sendFeedback");
+      }
+    }
     try {
       if (navigator.share) {
         await navigator.share({ title: "FoodChecker feedback", text: body });
@@ -1297,10 +1331,7 @@ function feedbackCard(): HTMLElement {
         toast(t("feedbackCopied"), 5000);
         return;
       }
-      toast(t("feedbackThanks"));
-      text.value = "";
-      rating = 0;
-      drawStars();
+      done();
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return; // closed the share sheet
       try {
@@ -1324,7 +1355,7 @@ function feedbackCard(): HTMLElement {
       t("feedback"),
     ),
     text,
-    h("button", { class: "btn wide primary", onclick: send }, t("sendFeedback")),
+    sendBtn,
   );
 }
 
