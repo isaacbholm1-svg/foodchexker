@@ -1,15 +1,18 @@
 import "./style.css";
-import { analyzeMeal, AnalysisError, type Analysis, type FoodItem } from "./ai";
+import { analyzeMeal, AnalysisError, suggestIdeas, type Analysis, type FoodItem, type Idea } from "./ai";
+import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
+import { confetti, countUp, replay } from "./fx";
 import { LookupError, lookupBarcode, startScanner, type ScanControls } from "./barcode";
 import { prepareImage } from "./image";
 import { motivation } from "./motivation";
-import { LANGUAGES, celebrateLines, detectLanguage, getLanguage, locale, setLanguage, t, type StringKey } from "./i18n";
+import { LANGUAGES, celebrateLines, detectLanguage, getLanguage, locale, setLanguage, t, tips, type StringKey } from "./i18n";
 import { GOAL_EMOJI, activitySummary, energyValue, fmtEnergy, fmtHeight, fmtWater, fmtWeight, goalLabel, makePlan, weightToKg, weightValue } from "./nutrition";
 import { runOnboarding, type OnboardingResult } from "./onboarding";
 import { currentStreak, renderStats, type Range } from "./stats";
 import {
   addDays,
   addEntry,
+  allFavorites,
   allWeights,
   deleteEntry,
   deleteWeight,
@@ -18,6 +21,8 @@ import {
   exportCsv,
   guessMeal,
   importBackup,
+  isFavorite,
+  markBadgesSeen,
   loadSettings,
   localDate,
   logWeight,
@@ -25,9 +30,13 @@ import {
   recentMeals,
   resetEverything,
   saveSettings,
+  seenBadges,
   setWater,
+  toggleFavorite,
+  updateEntry,
   waterFor,
   type Entry,
+  type EntrySource,
   type MealType,
   type Settings,
   type Targets,
@@ -74,6 +83,7 @@ function applyTheme() {
 
 // ======================= navigation =======================
 function setTab(t: typeof tab) {
+  if (t === "today") animateIn = true;
   tab = t;
   for (const b of document.querySelectorAll<HTMLButtonElement>(".tab")) {
     if (b.dataset.tab === t) b.setAttribute("aria-current", "page");
@@ -83,6 +93,7 @@ function setTab(t: typeof tab) {
   $("view-stats").hidden = t !== "stats";
   $("view-settings").hidden = t !== "settings";
   render();
+  replay($(`view-${t}`), "view-in");
   window.scrollTo({ top: 0 });
 }
 
@@ -100,22 +111,46 @@ function dayLabel(date: string): string {
   return parseDate(date).toLocaleDateString(locale(), { weekday: "short", month: "short", day: "numeric" });
 }
 
+// ---- Today-screen state for animations ----
+let animateIn = true; // play the card entrance animation on the next Today render
+let highlightId: string | null = null; // a just-added meal row to highlight
+let lastShown = { date: "", eaten: 0, left: 0, frac: 0, bars: {} as Record<string, number> };
+let pendingMeal: MealType | null = null; // meal chosen with a "+ Add" button
+let waterPop = false;
+let tipOffset = 0;
+
+const SPARKLE_SVG =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M10 2.5c.45 4.1 2.4 6.05 6.5 6.5-4.1.45-6.05 2.4-6.5 6.5-.45-4.1-2.4-6.05-6.5-6.5 4.1-.45 6.05-2.4 6.5-6.5Z"/><path fill="currentColor" d="M18.5 13.5c.25 2.25 1.25 3.25 3.5 3.5-2.25.25-3.25 1.25-3.5 3.5-.25-2.25-1.25-3.25-3.5-3.5 2.25-.25 3.25-1.25 3.5-3.5Z"/></svg>';
+
+function aiBadge(): HTMLElement {
+  const b = h("span", { class: "ai-badge" });
+  b.innerHTML = SPARKLE_SVG;
+  b.append(t("aiPowered"));
+  return b;
+}
+
 function renderToday() {
   const root = $("view-today");
   const u = U();
   const tg = settings.targets;
   const isToday = viewDate === localDate();
   const entries = entriesFor(viewDate);
-  const totals = sum(entries.flatMap((e) => e.items));
+  const allItems = entries.flatMap((e) => e.items);
+  const totals = sum(allItems);
+  const fiber = allItems.reduce((a, i) => a + i.fiber_g, 0);
+  const sugar = allItems.reduce((a, i) => a + i.sugar_g, 0);
   const waterMl = waterFor(viewDate);
+  const streak = currentStreak();
+  const same = lastShown.date === viewDate;
 
   // --- header ---
   const header = h(
     "header",
     { class: "topbar" },
-    h("button", { class: "icon-btn", "aria-label": t("prevDay"), onclick: () => { viewDate = addDays(viewDate, -1); render(); } }, "‹"),
-    h("button", { class: "day-label", onclick: () => { viewDate = localDate(); render(); } }, dayLabel(viewDate)),
-    h("button", { class: "icon-btn", "aria-label": t("nextDay"), disabled: isToday, onclick: () => { if (!isToday) { viewDate = addDays(viewDate, 1); render(); } } }, "›"),
+    h("button", { class: "icon-btn", "aria-label": t("prevDay"), onclick: () => goDay(-1) }, "‹"),
+    h("button", { class: "day-label", onclick: () => { viewDate = localDate(); animateIn = true; render(); } }, dayLabel(viewDate)),
+    h("button", { class: "icon-btn", "aria-label": t("nextDay"), disabled: isToday, onclick: () => goDay(1) }, "›"),
+    streak > 0 ? h("span", { class: "streak-pill", "aria-label": t("streakAria", { n: streak }) }, h("span", { class: "flame" }, "🔥"), String(streak)) : null,
   );
 
   // --- motivation ---
@@ -132,7 +167,7 @@ function renderToday() {
         proteinTarget: tg.protein,
         waterMl,
         waterTarget: settings.showWater ? tg.waterMl : 0,
-        streak: currentStreak(),
+        streak,
         entriesToday: entries.length,
         isToday,
         weekday: parseDate(viewDate).getDay(),
@@ -140,15 +175,24 @@ function renderToday() {
       },
       viewDate,
     );
+    const textEl = h("span", { class: "moti-text" }, m.text);
     moti = h(
       "button",
-      { class: "card motivation", "aria-label": t("motiAria", { text: m.text }), onclick: () => { motivationSeed++; render(); } },
+      {
+        class: "card motivation",
+        "aria-label": t("motiAria", { text: m.text }),
+        onclick: () => {
+          motivationSeed++;
+          render();
+          replay($("view-today").querySelector(".motivation")!, "flip");
+        },
+      },
       h("span", { class: "moti-emoji", "aria-hidden": "true" }, m.emoji),
-      h("span", { class: "moti-text" }, m.text),
+      textEl,
     );
   }
 
-  // --- summary ring + macros ---
+  // --- summary ring + macros (animated from the last values shown) ---
   const left = tg.calories - totals.calories;
   const frac = Math.min(totals.calories / (tg.calories || 1), 1);
   const C = 2 * Math.PI * 52;
@@ -156,32 +200,62 @@ function renderToday() {
   ringSvg.setAttribute("viewBox", "0 0 120 120");
   ringSvg.setAttribute("class", "ring");
   ringSvg.setAttribute("aria-hidden", "true");
-  ringSvg.innerHTML = `<circle class="ring-track" cx="60" cy="60" r="52"/><circle class="ring-fill${left < 0 ? " over" : ""}" cx="60" cy="60" r="52" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - frac)}"/>`;
-  const macro = (label: string, key: string, val: number, goal: number) =>
-    h(
+  const startFrac = same ? lastShown.frac : 0;
+  ringSvg.innerHTML = `<circle class="ring-track" cx="60" cy="60" r="52"/><circle class="ring-fill${left < 0 ? " over" : ""}" cx="60" cy="60" r="52" style="stroke-dasharray:${C};stroke-dashoffset:${C * (1 - startFrac)}"/>`;
+  const ringFill = ringSvg.querySelector<SVGCircleElement>(".ring-fill")!;
+  requestAnimationFrame(() => requestAnimationFrame(() => (ringFill.style.strokeDashoffset = String(C * (1 - frac)))));
+
+  const ringNum = h("div", { class: fmtEnergy(Math.abs(left), u, false).length > 5 ? "ring-num long" : "ring-num" });
+  countUp(ringNum, same ? Math.abs(lastShown.left) : Math.abs(tg.calories), Math.abs(left), (n) => fmtEnergy(n, u, false));
+  const eatenNum = h("span", {});
+  countUp(eatenNum, same ? lastShown.eaten : 0, totals.calories, (n) => fmtEnergy(n, u, false));
+
+  const bars: Record<string, number> = {};
+  const macro = (label: string, key: string, val: number, goal: number) => {
+    const pct = Math.min((val / (goal || 1)) * 100, 100);
+    bars[key] = pct;
+    const fill = h("div", { class: "bar-fill", style: `width:${same ? (lastShown.bars[key] ?? 0) : 0}%` });
+    requestAnimationFrame(() => requestAnimationFrame(() => (fill.style.width = `${pct}%`)));
+    return h(
       "div",
       { class: "macro", "data-macro": key },
       h("div", { class: "macro-head" }, h("span", {}, label), h("span", { class: "macro-val" }, `${round(val)} / ${goal} g`)),
-      h("div", { class: "bar" }, h("div", { class: "bar-fill", style: `width:${Math.min((val / (goal || 1)) * 100, 100)}%` })),
+      h("div", { class: "bar" }, fill),
     );
+  };
+
+  const score = dayScore(entries, waterMl, settings);
   const summary = h(
     "section",
-    { class: "card summary", "aria-label": "Daily summary" },
+    { class: "card summary-card" },
     h(
       "div",
-      { class: "ring-wrap" },
-      ringSvg,
-      h("div", { class: "ring-text" }, h("div", { class: fmtEnergy(Math.abs(left), u, false).length > 5 ? "ring-num long" : "ring-num" }, fmtEnergy(Math.abs(left), u, false)), h("div", { class: "ring-sub" }, `${u.energy} ${left < 0 ? t("over") : t("left")}`)),
+      { class: "summary" },
+      h("div", { class: "ring-wrap" }, ringSvg, h("div", { class: "ring-text" }, ringNum, h("div", { class: "ring-sub" }, `${u.energy} ${left < 0 ? t("over") : t("left")}`))),
+      h(
+        "div",
+        { class: "summary-side" },
+        h("div", { class: "eaten" }, eatenNum, ` / ${fmtEnergy(tg.calories, u)}`),
+        macro(t("protein"), "protein", totals.protein_g, tg.protein),
+        macro(t("carbs"), "carbs", totals.carbs_g, tg.carbs),
+        macro(t("fat"), "fat", totals.fat_g, tg.fat),
+      ),
     ),
     h(
       "div",
-      { class: "summary-side" },
-      h("div", { class: "eaten" }, `${fmtEnergy(totals.calories, u, false)} / ${fmtEnergy(tg.calories, u)}`),
-      macro(t("protein"), "protein", totals.protein_g, tg.protein),
-      macro(t("carbs"), "carbs", totals.carbs_g, tg.carbs),
-      macro(t("fat"), "fat", totals.fat_g, tg.fat),
+      { class: "summary-foot" },
+      h("span", { class: "muted small" }, t("fiberSugar", { f: round(fiber), ft: tg.fiber, s: round(sugar) })),
+      score
+        ? h(
+            "button",
+            { class: `score-chip s${score.score >= 80 ? "hi" : score.score >= 55 ? "mid" : "lo"}`, onclick: () => openScore(score) },
+            h("span", { class: "score-num" }, String(score.score)),
+            h("span", {}, t("dayScore")),
+          )
+        : null,
     ),
   );
+  lastShown = { date: viewDate, eaten: totals.calories, left, frac, bars };
 
   // --- add food ---
   const textInput = h("input", { id: "text-input", type: "text", placeholder: t("describePlaceholder"), autocomplete: "off", enterkeyhint: "go", value: draftText, "aria-label": t("describeAria") });
@@ -194,23 +268,33 @@ function renderToday() {
     textInput.blur();
     runAnalysis({ text });
   });
+  const favs = allFavorites();
   const recents = recentMeals(10);
+  const chipRow = (title: string, list: { name: string; thumb?: string }[], onPick: (i: number) => void) =>
+    h(
+      "div",
+      { class: "recents" },
+      h("div", { class: "muted small recents-title" }, title),
+      h("div", { class: "chips" }, ...list.map((e, i) => h("button", { class: "chip", onclick: () => onPick(i) }, e.thumb ? h("img", { src: e.thumb, alt: "" }) : null, h("span", {}, e.name)))),
+    );
   const add = h(
     "section",
-    { class: "card add", "aria-label": "Add food" },
+    { class: "card add", "aria-label": t("addFood") },
     h("label", { class: "snap-btn", for: "photo-input" }, h("span", { class: "cam", "aria-hidden": "true" }, "📷"), h("span", {}, t("snapPhoto"))),
-    h("button", { type: "button", class: "scan-btn", onclick: openScanner }, h("span", { class: "barcode-icon", "aria-hidden": "true" }), h("span", {}, t("scanBarcode"))),
+    h(
+      "div",
+      { class: "add-row" },
+      h("button", { type: "button", class: "scan-btn", onclick: openScanner }, h("span", { class: "barcode-icon", "aria-hidden": "true" }), h("span", {}, t("scanBarcode"))),
+      h("button", { type: "button", class: "scan-btn quick-btn", onclick: () => openQuickAdd() }, h("span", {}, t("quickAdd"))),
+    ),
     h("div", { class: "or" }, t("orDescribe")),
     form,
-    recents.length
-      ? h(
-          "div",
-          { class: "recents" },
-          h("div", { class: "muted small recents-title" }, t("logAgainNoAi")),
-          h("div", { class: "chips" }, ...recents.map((e) => h("button", { class: "chip", onclick: () => reLog(e) }, e.thumb ? h("img", { src: e.thumb, alt: "" }) : null, h("span", {}, e.name)))),
-        )
-      : null,
+    favs.length ? chipRow(t("favorites"), favs, (i) => showReview({ meal_name: favs[i].name, items: favs[i].items.map((x) => ({ ...x })), confidence: "high", notes: "" }, { thumb: favs[i].thumb, preview: favs[i].thumb, noBadge: true, source: "favorite" })) : null,
+    recents.length ? chipRow(t("logAgainNoAi"), recents, (i) => reLog(recents[i])) : null,
   );
+
+  // --- suggestions + AI ideas ---
+  const sugg = isToday ? suggestionsCard({ entries, totals, fiber, sugar, waterMl }) : null;
 
   // --- water ---
   let waterCard: HTMLElement | null = null;
@@ -225,16 +309,25 @@ function renderToday() {
         "div",
         { class: "water-row" },
         h("button", { class: "round-btn", "aria-label": t("removeGlass"), onclick: () => { setWater(viewDate, waterMl - settings.glassMl); render(); } }, "−"),
-        h("div", { class: "glasses", role: "img", "aria-label": t("glassesAria", { n: glasses, m: goalGlasses }) }, ...Array.from({ length: Math.min(16, Math.max(goalGlasses, glasses)) }, (_, i) => h("span", { class: i < glasses ? "glass full" : "glass" }))),
+        h(
+          "div",
+          { class: "glasses", role: "img", "aria-label": t("glassesAria", { n: glasses, m: goalGlasses }) },
+          ...Array.from({ length: Math.min(16, Math.max(goalGlasses, glasses)) }, (_, i) => h("span", { class: `glass${i < glasses ? " full" : ""}${waterPop && i === glasses - 1 ? " pop" : ""}` })),
+        ),
         h(
           "button",
           {
             class: "round-btn primary",
             "aria-label": t("addGlass"),
-            onclick: () => {
+            onclick: (ev: MouseEvent) => {
               setWater(viewDate, waterMl + settings.glassMl);
-              if (waterMl + settings.glassMl >= tg.waterMl && waterMl < tg.waterMl) toast(settings.profile ? t("waterGoalReachedName", { name: settings.profile.name }) : t("waterGoalReached"));
+              waterPop = true;
+              if (waterMl + settings.glassMl >= tg.waterMl && waterMl < tg.waterMl) {
+                toast(settings.profile ? t("waterGoalReachedName", { name: settings.profile.name }) : t("waterGoalReached"));
+                confetti({ x: ev.clientX, y: ev.clientY, count: 70 });
+              }
               render();
+              checkBadges();
             },
           },
           "+",
@@ -242,40 +335,339 @@ function renderToday() {
       ),
       h("div", { class: "muted small" }, t("oneGlass", { amount: fmtWater(settings.glassMl, u) })),
     );
+    waterPop = false;
   }
 
-  // --- log ---
+  // --- log: every meal has its own section with an add button ---
   const log = h("section", { class: "log", "aria-label": t("progress") });
-  if (!entries.length) {
-    log.append(h("div", { class: "empty" }, isToday ? t("emptyToday") : t("emptyDay")));
-  }
   for (const meal of MEALS) {
     const list = entries.filter((e) => e.meal === meal);
-    if (!list.length) continue;
+    const kcal = sum(list.flatMap((e) => e.items)).calories;
     log.append(
       h(
         "div",
-        { class: "card meal-group" },
-        h("div", { class: "meal-head" }, h("h3", {}, mealLabel(meal)), h("span", { class: "muted" }, fmtEnergy(sum(list.flatMap((e) => e.items)).calories, u))),
+        { class: `card meal-group${list.length ? "" : " empty-meal"}` },
+        h(
+          "div",
+          { class: "meal-head" },
+          h("h3", {}, `${MEAL_EMOJI[meal]} ${mealLabel(meal)}`),
+          h("span", { class: "muted" }, list.length ? fmtEnergy(kcal, u) : ""),
+          h("button", { class: "add-mini", "aria-label": t("addTo", { meal: mealLabel(meal) }), onclick: () => openAddSheet(meal) }, "+"),
+        ),
         ...list.map(renderEntry),
       ),
     );
   }
 
-  root.replaceChildren(
-    header,
-    ...(moti ? [moti] : []),
-    summary,
-    add,
-    ...(waterCard ? [waterCard] : []),
-    log,
-    h("p", { class: "footer-note" }, t("aiDisclaimer")),
+  // --- tip of the day ---
+  const allTips = tips();
+  const dayIndex = Math.floor(parseDate(viewDate).getTime() / 86400000);
+  const tip = allTips[(((dayIndex + tipOffset) % allTips.length) + allTips.length) % allTips.length];
+  const tipSpace = tip.indexOf(" ");
+  const tipCard = h(
+    "button",
+    { class: "card tip-card", onclick: () => { tipOffset++; render(); replay($("view-today").querySelector(".tip-card")!, "flip"); } },
+    h("span", { class: "tip-emoji", "aria-hidden": "true" }, tip.slice(0, tipSpace)),
+    h("span", { class: "tip-body" }, h("span", { class: "tip-title" }, t("tipTitle")), h("span", {}, tip.slice(tipSpace + 1))),
   );
+
+  root.replaceChildren(
+    ...[header, moti, summary, add, sugg, waterCard, log, tipCard, h("p", { class: "footer-note" }, t("aiDisclaimer"))].filter((n): n is HTMLElement => !!n),
+  );
+  root.classList.toggle("stagger", animateIn);
+  animateIn = false;
+  if (highlightId) {
+    root.querySelector(`[data-id="${highlightId}"]`)?.classList.add("just-added");
+    highlightId = null;
+  }
+}
+
+const MEAL_EMOJI: Record<MealType, string> = { breakfast: "🍳", lunch: "🥪", dinner: "🍝", snack: "🍎" };
+
+function goDay(delta: number) {
+  const next = addDays(viewDate, delta);
+  if (next > localDate()) return;
+  viewDate = next;
+  animateIn = false;
+  render();
+  replay($("view-today"), delta < 0 ? "slide-right" : "slide-left");
+}
+
+// ---------------- suggestions & AI ideas ----------------
+const IDEAS_KEY = "fc.ideas.v1";
+let ideasState: { key: string; ideas: Idea[] | null; loading: boolean; failed: boolean } = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(IDEAS_KEY) || "null");
+    if (saved?.key && Array.isArray(saved.ideas)) return { key: saved.key, ideas: saved.ideas, loading: false, failed: false };
+  } catch {
+    /* ignore */
+  }
+  return { key: "", ideas: null, loading: false, failed: false };
+})();
+
+function suggestionsCard(ctx: { entries: Entry[]; totals: ReturnType<typeof sum>; fiber: number; sugar: number; waterMl: number }): HTMLElement {
+  const tg = settings.targets;
+  const u = U();
+  const hour = new Date().getHours();
+  const goal = settings.profile?.goal ?? "maintain";
+  const growth = goal === "gain" || goal === "muscle";
+  const left = tg.calories - ctx.totals.calories;
+  const tips: string[] = [];
+  const push = (s: string) => tips.length < 2 && tips.push(s);
+  if (hour >= 19 && ctx.totals.calories < tg.calories * 0.6 && !growth) push(t("sug_eat_enough"));
+  if (left < -tg.calories * 0.05 && !growth) push(t("sug_over"));
+  if (!ctx.entries.some((e) => e.meal === "breakfast") && hour < 11) push(t("sug_breakfast"));
+  if (tg.protein - ctx.totals.protein_g > 25 && hour >= 11) push(t("sug_protein", { n: round(tg.protein - ctx.totals.protein_g) }));
+  if (growth && left > 500 && hour >= 15) push(t("sug_gain"));
+  if (tg.fiber - ctx.fiber > 8 && hour >= 13) push(t("sug_fiber", { n: round(tg.fiber - ctx.fiber) }));
+  if (ctx.sugar > (tg.calories * 0.1) / 4) push(t("sug_sugar"));
+  if (settings.showWater && hour >= 12 && ctx.waterMl < tg.waterMl) push(t("sug_water", { n: fmtWater(tg.waterMl - ctx.waterMl, u) }));
+  if (left > 400) push(t("sug_meal_left", { n: fmtEnergy(left, u) }));
+  else if (left > 150) push(t("sug_snack"));
+  if (!tips.length && ctx.entries.length) push(t("sug_all_good"));
+
+  const card = h("section", { class: "card sugg-card", id: "sugg-card" }, h("div", { class: "card-head" }, h("h3", {}, t("sugTitle"))));
+  for (const s of tips) card.append(h("p", { class: "sugg-line" }, s));
+
+  // AI ideas
+  const ideasBox = h("div", { class: "ideas" });
+  const refresh = h("button", { class: "icon-btn refresh-btn", "aria-label": t("newIdeas"), title: t("newIdeas"), onclick: () => loadIdeas(true) }, "↻");
+  card.append(h("div", { class: "ideas-head" }, h("span", { class: "ideas-title" }, t("ideasTitle")), aiBadge(), settings.apiKey ? refresh : null), ideasBox);
+
+  if (!settings.apiKey) {
+    ideasBox.append(h("p", { class: "muted small" }, t("ideasNeedKey")));
+    return card;
+  }
+  const key = `${viewDate}|${Math.round(ctx.totals.calories / 150)}|${getLanguage()}`;
+  if (ideasState.key !== key && !ideasState.loading) loadIdeas(false, key, ctx);
+  if (ideasState.loading || ideasState.key !== key) {
+    ideasBox.append(
+      h("p", { class: "muted small ideas-loading" }, h("span", { class: "sparkle-spin" }), t("ideasLoading")),
+      ...[0, 1, 2].map(() => h("div", { class: "idea skeleton" }, h("span", { class: "sk sk-emoji" }), h("span", { class: "sk-lines" }, h("span", { class: "sk sk-1" }), h("span", { class: "sk sk-2" })))),
+    );
+  } else if (ideasState.failed || !ideasState.ideas?.length) {
+    ideasBox.append(h("p", { class: "muted small" }, t("ideasFailed")));
+  } else {
+    ideasBox.append(
+      ...ideasState.ideas.map((idea, i) =>
+        h(
+          "button",
+          { class: "idea", style: `animation-delay:${i * 90}ms`, onclick: () => runAnalysis({ text: `${idea.title}. ${idea.detail}` }) },
+          h("span", { class: "idea-emoji", "aria-hidden": "true" }, idea.emoji),
+          h("span", { class: "idea-text" }, h("span", { class: "idea-title" }, idea.title), h("span", { class: "muted small" }, idea.detail)),
+          idea.calories ? h("span", { class: "idea-kcal" }, fmtEnergy(idea.calories, u)) : null,
+        ),
+      ),
+    );
+  }
+  return card;
+
+  function loadIdeas(force: boolean, k = key, c = ctx) {
+    if (ideasState.loading) return;
+    ideasState = { key: force ? "" : ideasState.key, ideas: force ? null : ideasState.ideas, loading: true, failed: false };
+    if (force) render();
+    const eaten = c.entries.map((e) => e.name).slice(-8);
+    const nextMeal = hour < 10 ? "breakfast" : hour < 15 ? "lunch" : hour < 21 ? "dinner" : "evening snack";
+    suggestIdeas({
+      apiKey: settings.apiKey,
+      hour,
+      goal: settings.profile ? goalLabel(goal) : "eat balanced",
+      age: settings.profile?.age,
+      kcalLeft: settings.targets.calories - c.totals.calories,
+      proteinLeft: Math.max(0, settings.targets.protein - c.totals.protein_g),
+      fiberLeft: Math.max(0, settings.targets.fiber - c.fiber),
+      nextMeal,
+      eatenToday: eaten,
+    })
+      .then((ideas) => {
+        ideasState = { key: k, ideas, loading: false, failed: false };
+        try {
+          localStorage.setItem(IDEAS_KEY, JSON.stringify({ key: k, ideas }));
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => (ideasState = { key: k, ideas: null, loading: false, failed: true }))
+      .finally(() => {
+        if (tab === "today" && viewDate === localDate()) {
+          const old = document.getElementById("sugg-card");
+          if (old) {
+            const s = summaryForSuggestions();
+            old.replaceWith(suggestionsCard(s));
+          }
+        }
+      });
+  }
+}
+
+function summaryForSuggestions() {
+  const entries = entriesFor(viewDate);
+  const items = entries.flatMap((e) => e.items);
+  return { entries, totals: sum(items), fiber: items.reduce((a, i) => a + i.fiber_g, 0), sugar: items.reduce((a, i) => a + i.sugar_g, 0), waterMl: waterFor(viewDate) };
+}
+
+// ---------------- day score sheet ----------------
+function openScore(score: { score: number; parts: ScorePart[] }) {
+  $("mini-body").replaceChildren(
+    h("div", { class: "score-hero" }, h("div", { class: `score-big s${score.score >= 80 ? "hi" : score.score >= 55 ? "mid" : "lo"}` }, String(score.score)), h("h2", {}, t("scoreTitle", { n: score.score }))),
+    ...score.parts.map((p) =>
+      h(
+        "div",
+        { class: "score-row" },
+        h("span", {}, `${p.points >= p.max * 0.8 ? "✅" : p.points > 0 ? "🟡" : "⚪"} ${t(p.key)}`),
+        h("span", { class: "muted" }, `${p.points}/${p.max}`),
+      ),
+    ),
+    h("p", { class: "muted small" }, t("scoreHint")),
+    h("div", { class: "sheet-actions" }, h("button", { class: "btn primary", onclick: () => mini.close() }, t("close"))),
+  );
+  mini.showModal();
+}
+
+// ---------------- "+ Add" sheet for a meal ----------------
+function openAddSheet(meal: MealType) {
+  pendingMeal = meal;
+  const opt = (emoji: string, label: string, onclick: () => void) => h("button", { class: "add-option", onclick }, h("span", { class: "add-option-emoji" }, emoji), h("span", {}, label));
+  $("mini-body").replaceChildren(
+    h("h2", {}, t("addTo", { meal: mealLabel(meal) })),
+    h("p", { class: "muted" }, t("howAdd")),
+    h(
+      "div",
+      { class: "add-options" },
+      opt("📷", t("snapPhoto"), () => { mini.close(); photoInput.click(); }),
+      opt("▥", t("scanBarcode"), () => { mini.close(); openScanner(); }),
+      opt("💬", t("describeIt"), () => { mini.close(); const i = document.getElementById("text-input") as HTMLInputElement | null; i?.scrollIntoView({ block: "center", behavior: "smooth" }); i?.focus(); }),
+      opt("✏️", t("quickAddTitle"), () => { mini.close(); openQuickAdd(meal); }),
+    ),
+    h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", onclick: () => { pendingMeal = null; mini.close(); } }, t("cancel"))),
+  );
+  mini.showModal();
+}
+
+// ---------------- quick add (no AI) ----------------
+function openQuickAdd(meal?: MealType) {
+  const u = U();
+  let chosen: MealType = meal ?? pendingMeal ?? (viewDate === localDate() ? guessMeal() : "snack");
+  const name = h("input", { type: "text", placeholder: t("quickNamePh"), autocomplete: "off" });
+  const kcal = h("input", { type: "number", inputmode: "numeric", placeholder: "0" });
+  const grams = (label: string) => {
+    const i = h("input", { type: "number", inputmode: "decimal", placeholder: t("optional") });
+    return { input: i, field: h("label", { class: "field" }, h("span", {}, `${label} (g)`), i) };
+  };
+  const p = grams(t("protein"));
+  const c = grams(t("carbs"));
+  const f = grams(t("fat"));
+  $("mini-body").replaceChildren(
+    h("h2", {}, t("quickAddTitle")),
+    h("p", { class: "muted small" }, t("quickAddDesc")),
+    h("label", { class: "field" }, h("span", {}, t("quickName")), name),
+    h("label", { class: "field" }, h("span", {}, t("quickKcal", { unit: u.energy })), kcal),
+    h("div", { class: "field-row three" }, p.field, c.field, f.field),
+    segmented<MealType>(MEALS.map((m) => ({ value: m, label: m === "snack" ? t("snack") : mealLabel(m) })), chosen, (v) => (chosen = v), t("meal")),
+    h(
+      "div",
+      { class: "sheet-actions" },
+      h("button", { class: "btn ghost", onclick: () => mini.close() }, t("cancel")),
+      h(
+        "button",
+        {
+          class: "btn primary",
+          onclick: () => {
+            const shown = Number(kcal.value);
+            if (!(shown > 0)) return toast(t("quickNeedKcal"));
+            const kc = u.energy === "kJ" ? shown / 4.184 : shown;
+            const g = (i: HTMLInputElement) => Math.max(0, Number(i.value) || 0);
+            const title = name.value.trim() || t("quickDefault");
+            logNew({ name: title, meal: chosen, items: [{ name: title, portion: t("oneServing"), calories: kc, protein_g: g(p.input), carbs_g: g(c.input), fat_g: g(f.input), fiber_g: 0, sugar_g: 0 }], source: "quick" });
+            mini.close();
+          },
+        },
+        t("addToLog"),
+      ),
+    ),
+  );
+  pendingMeal = null;
+  mini.showModal();
+  setTimeout(() => kcal.focus(), 60);
+}
+
+/** Save a new meal, then celebrate goals and achievements. */
+function logNew(e: { name: string; meal: MealType; items: FoodItem[]; thumb?: string; source: EntrySource }) {
+  const tg = settings.targets;
+  const before = sum(entriesFor(viewDate).flatMap((x) => x.items)).calories;
+  const now = new Date();
+  const when = viewDate === localDate() ? now : new Date(parseDate(viewDate).getTime() + 12 * 3600000);
+  highlightId = addEntry({ date: viewDate, time: when.getTime(), meal: e.meal, name: e.name, thumb: e.thumb, items: e.items, source: e.source });
+  const after = before + sum(e.items).calories;
+  draftText = "";
+  render();
+  if (viewDate === localDate() && before < tg.calories * 0.92 && after >= tg.calories * 0.92 && after <= tg.calories * 1.1) {
+    toast(t("calGoalReached"));
+    confetti();
+  } else toast(celebrate());
+  checkBadges();
+}
+
+// ---------------- achievements ----------------
+let badgeQueue: string[] = [];
+
+function checkBadges(silent = false) {
+  const earned = earnedBadges(settings);
+  const seen = seenBadges();
+  const fresh = [...earned].filter((id) => !seen.has(id));
+  if (!fresh.length) return;
+  markBadgesSeen(fresh);
+  if (silent) return;
+  badgeQueue.push(...fresh);
+  if (!document.querySelector(".badge-pop")) showNextBadge();
+}
+
+function showNextBadge() {
+  const id = badgeQueue.shift();
+  const b = BADGES.find((x) => x.id === id);
+  if (!b) return;
+  const pop = h(
+    "div",
+    { class: "badge-pop", role: "dialog", "aria-modal": "true", "aria-label": t("badgeUnlocked") },
+    h(
+      "div",
+      { class: "badge-card" },
+      h("div", { class: "badge-rays", "aria-hidden": "true" }),
+      h("div", { class: "badge-medal" }, b.emoji),
+      h("p", { class: "badge-kicker" }, t("badgeUnlocked")),
+      h("h2", {}, badgeName(b)),
+      h("p", { class: "muted" }, badgeDesc(b)),
+      h(
+        "button",
+        {
+          class: "btn primary wide",
+          onclick: () => {
+            pop.classList.add("out");
+            setTimeout(() => {
+              pop.remove();
+              if (badgeQueue.length) showNextBadge();
+            }, 250);
+          },
+        },
+        t("awesome"),
+      ),
+    ),
+  );
+  document.body.append(pop);
+  setTimeout(() => confetti({ y: window.innerHeight * 0.35 }), 250);
 }
 
 function renderEntry(e: Entry) {
   const tot = sum(e.items);
   const u = U();
+  const fav = isFavorite(e.name);
+  const favBtn = h("button", { class: `btn small fav-btn${fav ? " on" : ""}` }, fav ? t("removeFavorite") : t("addFavorite"));
+  favBtn.addEventListener("click", () => {
+    const now = toggleFavorite({ name: e.name, thumb: e.thumb, items: e.items });
+    toast(now ? t("favAdded") : t("favRemoved"));
+    render();
+    checkBadges();
+  });
   const details = h(
     "div",
     { class: "entry-items" },
@@ -283,15 +675,17 @@ function renderEntry(e: Entry) {
     h(
       "div",
       { class: "entry-actions" },
+      h("button", { class: "btn small", onclick: () => editEntry(e) }, `✏️ ${t("edit")}`),
       h("button", { class: "btn small", onclick: () => reLog(e) }, t("logAgain")),
+      favBtn,
       h("button", { class: "btn danger small", onclick: () => { if (confirm(t("confirmDeleteEntry", { name: e.name }))) { deleteEntry(e.id); render(); } } }, t("delete")),
     ),
   );
   const row = h(
     "button",
     { class: "entry", "aria-expanded": "false" },
-    e.thumb ? h("img", { class: "thumb", src: e.thumb, alt: "" }) : h("div", { class: "thumb placeholder" }, "🍽"),
-    h("div", { class: "entry-main" }, h("div", { class: "entry-name" }, e.name), h("div", { class: "muted small" }, `P ${round(tot.protein_g)} · C ${round(tot.carbs_g)} · F ${round(tot.fat_g)} g`)),
+    e.thumb ? h("img", { class: "thumb", src: e.thumb, alt: "" }) : h("div", { class: "thumb placeholder" }, MEAL_EMOJI[e.meal]),
+    h("div", { class: "entry-main" }, h("div", { class: "entry-name" }, fav ? `⭐ ${e.name}` : e.name), h("div", { class: "muted small" }, `P ${round(tot.protein_g)} · C ${round(tot.carbs_g)} · F ${round(tot.fat_g)} g`)),
     h("div", { class: "entry-kcal" }, fmtEnergy(tot.calories, u, false)),
   );
   row.addEventListener("click", () => {
@@ -299,11 +693,15 @@ function renderEntry(e: Entry) {
     row.setAttribute("aria-expanded", String(!open));
     details.classList.toggle("open", !open);
   });
-  return h("div", { class: "entry-wrap" }, row, details);
+  return h("div", { class: "entry-wrap", "data-id": e.id }, row, details);
 }
 
 function reLog(e: Entry) {
-  showReview({ meal_name: e.name, items: e.items.map((i) => ({ ...i })), confidence: "high", notes: "" }, { thumb: e.thumb, preview: e.thumb, noBadge: true });
+  showReview({ meal_name: e.name, items: e.items.map((i) => ({ ...i })), confidence: "high", notes: "" }, { thumb: e.thumb, preview: e.thumb, noBadge: true, source: "repeat" });
+}
+
+function editEntry(e: Entry) {
+  showReview({ meal_name: e.name, items: e.items.map((i) => ({ ...i })), confidence: "high", notes: "" }, { thumb: e.thumb, preview: e.thumb, noBadge: true, source: e.source ?? "repeat", entry: e });
 }
 
 // ======================= analysis + review =======================
@@ -334,7 +732,9 @@ async function runAnalysis(input: { file?: File; text?: string }) {
   if (!review.open) review.showModal();
   try {
     const result = await analyzeMeal({ apiKey: settings.apiKey, image, text: input.text });
-    showReview(result, { thumb, preview });
+    loader.finish();
+    await new Promise((r) => setTimeout(r, 380)); // let the progress bar complete
+    showReview(result, { thumb, preview, source: input.file ? "photo" : "text" });
   } catch (err) {
     review.close();
     toast(err instanceof AnalysisError ? err.message : t("somethingWrong"), 8000);
@@ -344,20 +744,34 @@ async function runAnalysis(input: { file?: File; text?: string }) {
 }
 
 /** The "AI is looking at your food" animation: scanning beam over the photo (or orbiting food emojis) and changing steps. */
-function analyzingView(preview?: string): { el: HTMLElement; stop: () => void } {
+function analyzingView(preview?: string): { el: HTMLElement; stop: () => void; finish: () => void } {
   const steps: StringKey[] = ["loadFind", "loadPortion", "loadCount", "loadAlmost"];
   const label = h("p", { class: "an-step in" }, t(steps[0]));
+  const FOODS = ["🍎", "🥑", "🍞", "🥦", "🍳", "🍌", "🥕", "🧀", "🍗", "🍓"];
+  const pick = () => FOODS[(Math.random() * FOODS.length) | 0];
   const visual = preview
-    ? h("div", { class: "an-photo" }, h("img", { src: preview, alt: "" }), h("div", { class: "an-grid", "aria-hidden": "true" }), h("div", { class: "an-beam", "aria-hidden": "true" }), h("div", { class: "an-sparkle s1" }, "✦"), h("div", { class: "an-sparkle s2" }, "✦"), h("div", { class: "an-sparkle s3" }, "✦"))
+    ? h(
+        "div",
+        { class: "an-photo" },
+        h("img", { src: preview, alt: "" }),
+        h("div", { class: "an-grid", "aria-hidden": "true" }),
+        h("div", { class: "an-beam", "aria-hidden": "true" }),
+        h("div", { class: "an-corners", "aria-hidden": "true" }, h("i"), h("i"), h("i"), h("i")),
+        h("div", { class: "an-sparkle s1" }, "✦"),
+        h("div", { class: "an-sparkle s2" }, "✦"),
+        h("div", { class: "an-sparkle s3" }, "✦"),
+      )
     : h(
         "div",
         { class: "an-bowl", "aria-hidden": "true" },
+        h("span", { class: "an-pulse" }),
         h("span", { class: "an-center" }, "🥗"),
-        h("span", { class: "an-orbit o1" }, h("span", {}, "🍎")),
-        h("span", { class: "an-orbit o2" }, h("span", {}, "🥑")),
-        h("span", { class: "an-orbit o3" }, h("span", {}, "🍞")),
+        h("span", { class: "an-orbit o1" }, h("span", {}, pick())),
+        h("span", { class: "an-orbit o2" }, h("span", {}, pick())),
+        h("span", { class: "an-orbit o3" }, h("span", {}, pick())),
       );
   const dots = h("span", { class: "an-dots", "aria-hidden": "true" }, h("i"), h("i"), h("i"));
+  const fill = h("div", { class: "an-progress-fill" });
   let i = 0;
   const timer = window.setInterval(() => {
     if (i >= steps.length - 1) return;
@@ -366,17 +780,34 @@ function analyzingView(preview?: string): { el: HTMLElement; stop: () => void } 
     void label.offsetWidth; // restart the fade-in
     label.textContent = t(steps[i]);
     label.classList.add("in");
-  }, 1900);
-  const el = h("div", { class: "loading analyzing", role: "status", "aria-live": "polite" }, visual, label, dots, h("div", { class: "an-progress" }, h("div", { class: "an-progress-fill" })));
-  return { el, stop: () => clearInterval(timer) };
+  }, 1700);
+  const el = h("div", { class: "loading analyzing", role: "status", "aria-live": "polite" }, visual, label, dots, h("div", { class: "an-progress" }, fill));
+  return {
+    el,
+    stop: () => clearInterval(timer),
+    finish: () => {
+      fill.classList.add("done");
+      label.textContent = "✓";
+    },
+  };
 }
 
-function showReview(result: Analysis, opt: { thumb?: string; preview?: string; noBadge?: boolean }) {
+function showReview(result: Analysis, opt: { thumb?: string; preview?: string; noBadge?: boolean; source: EntrySource; entry?: Entry }) {
   const u = U();
   const items: FoodItem[] = result.items.map((i) => ({ ...i }));
   let servings = 1;
-  let meal: MealType = viewDate === localDate() ? guessMeal() : "snack";
+  let meal: MealType = opt.entry?.meal ?? pendingMeal ?? (viewDate === localDate() ? guessMeal() : "snack");
+  pendingMeal = null;
   const nameInput = h("input", { class: "title-input", value: result.meal_name, "aria-label": t("mealName") });
+  const star = h("button", { class: "icon-btn star-btn", "aria-label": t("addFavorite") }, isFavorite(result.meal_name) ? "★" : "☆");
+  star.classList.toggle("on", isFavorite(result.meal_name));
+  star.addEventListener("click", () => {
+    const now = toggleFavorite({ name: nameInput.value.trim() || result.meal_name, thumb: opt.thumb, items: items.map(scaled) });
+    star.textContent = now ? "★" : "☆";
+    star.classList.toggle("on", now);
+    replay(star, "pop");
+    toast(now ? t("favAdded") : t("favRemoved"));
+  });
   const itemsBox = h("div", { class: "review-items" });
   const totalsBox = h("div", { class: "review-totals" });
   const servingsLabel = h("span", { class: "serv-val" }, "1×");
@@ -391,7 +822,8 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
     sugar_g: i.sugar_g * servings,
   });
 
-  const addBtn = h("button", { class: "btn primary" }, t("addToLog"));
+  const addBtn = h("button", { class: "btn primary" }, opt.entry ? t("saveChanges") : t("addToLog"));
+  let lastKcal = 0;
 
   function update() {
     servingsLabel.textContent = `${servings}×`;
@@ -408,7 +840,7 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
         });
         return h(
           "div",
-          { class: "review-item" },
+          { class: "review-item", style: `animation-delay:${idx * 70}ms` },
           h("div", { class: "ri-main" }, h("div", { class: "ri-name" }, item.name), h("div", { class: "muted small" }, `${item.portion} · P ${fmt1(item.protein_g)} · C ${fmt1(item.carbs_g)} · F ${fmt1(item.fat_g)}`)),
           kcal,
           h("button", { class: "icon-btn remove", "aria-label": t("removeItem", { item: item.name }), onclick: () => { items.splice(idx, 1); update(); } }, "×"),
@@ -417,26 +849,33 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
     );
     if (!items.length) itemsBox.append(h("p", { class: "muted" }, t("noItems")));
     const tot = sum(items.map(scaled));
+    const num = h("span", {});
+    countUp(num, lastKcal, tot.calories, (n) => fmtEnergy(n, u, false), 450);
+    lastKcal = tot.calories;
     totalsBox.replaceChildren(
-      h("div", { class: "tot-kcal" }, fmtEnergy(tot.calories, u, false), h("small", {}, ` ${u.energy}`)),
+      h("div", { class: "tot-kcal" }, num, h("small", {}, ` ${u.energy}`)),
       h("div", { class: "tot-macros" }, t("totalsLine", { p: round(tot.protein_g), c: round(tot.carbs_g), f: round(tot.fat_g) })),
     );
     addBtn.disabled = !items.length;
   }
 
   addBtn.addEventListener("click", () => {
-    const now = new Date();
-    const when = viewDate === localDate() ? now : new Date(parseDate(viewDate).getTime() + 12 * 3600000);
-    addEntry({ date: viewDate, time: when.getTime(), meal, name: nameInput.value.trim() || result.meal_name, thumb: opt.thumb, items: items.map(scaled) });
+    const name = nameInput.value.trim() || result.meal_name;
+    if (opt.entry) {
+      updateEntry(opt.entry.id, { name, meal, items: items.map(scaled) });
+      review.close();
+      highlightId = opt.entry.id;
+      render();
+      toast(t("changesSaved"));
+      return;
+    }
     review.close();
-    draftText = "";
-    render();
-    toast(celebrate());
+    logNew({ name, meal, items: items.map(scaled), thumb: opt.thumb, source: opt.source });
   });
 
   const parts: (Node | null)[] = [
     opt.preview ? h("img", { class: "review-photo", src: opt.preview, alt: "" }) : null,
-    nameInput,
+    h("div", { class: "title-row" }, nameInput, star),
     opt.noBadge ? null : h("span", { class: `badge ${result.confidence}` }, t(`conf_${result.confidence}` as StringKey)),
     result.notes ? h("p", { class: "notes" }, result.notes) : null,
     itemsBox,
@@ -454,7 +893,14 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
     ),
     totalsBox,
     segmented<MealType>(MEALS.map((m) => ({ value: m, label: m === "snack" ? t("snack") : mealLabel(m) })), meal, (v) => (meal = v), t("meal")),
-    h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", onclick: () => review.close() }, t("cancel")), addBtn),
+    h(
+      "div",
+      { class: "sheet-actions" },
+      opt.entry
+        ? h("button", { class: "btn danger", onclick: () => { if (confirm(t("confirmDeleteEntry", { name: opt.entry!.name }))) { deleteEntry(opt.entry!.id); review.close(); render(); } } }, t("delete"))
+        : h("button", { class: "btn ghost", onclick: () => review.close() }, t("cancel")),
+      addBtn,
+    ),
   ];
   $("review-body").replaceChildren(...parts.filter((p): p is Node => p !== null));
   update();
@@ -512,7 +958,7 @@ function openScanner() {
         return;
       }
       scanner.close();
-      showReview(found.analysis, { thumb: found.image, preview: found.image, noBadge: true });
+      showReview(found.analysis, { thumb: found.image, preview: found.image, noBadge: true, source: "barcode" });
     } catch (err) {
       status.textContent = err instanceof LookupError ? err.message : t("somethingWrong");
     }
@@ -585,6 +1031,7 @@ function openWeightDialog() {
             mini.close();
             render();
             toast(t("weightSaved"));
+            checkBadges();
           },
         },
         t("save"),
@@ -868,8 +1315,34 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
 
 applyTheme();
 applyLanguage();
+// People who used the app before achievements existed get their earned ones quietly.
+try {
+  if (localStorage.getItem("fc.badges.v1") === null) checkBadges(true);
+} catch {
+  /* ignore */
+}
 render();
 hideSplash();
+
+// Swipe left/right on Today to change day.
+{
+  let sx = 0;
+  let sy = 0;
+  let tracking = false;
+  const today = $("view-today");
+  today.addEventListener("touchstart", (e) => {
+    const target = e.target as HTMLElement;
+    tracking = !target.closest(".chips, input, .glasses");
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+  }, { passive: true });
+  today.addEventListener("touchend", (e) => {
+    if (!tracking) return;
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) > 70 && Math.abs(dy) < 45) goDay(dx > 0 ? -1 : 1);
+  }, { passive: true });
+}
 if (!settings.onboarded) setTimeout(editProfile, 300);
 
 // Ask the browser to keep this app's data even when the phone is low on space.

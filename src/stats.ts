@@ -1,7 +1,8 @@
+import { BADGES, badgeDesc, badgeName, earnedBadges } from "./badges";
 import { locale, t } from "./i18n";
 import { fmtEnergy, fmtNum, fmtWeight, energyValue, weightValue, goalEta } from "./nutrition";
 import { addDays, allEntries, allWeights, localDate, parseDate, type Entry, type Goal, type Settings } from "./store";
-import { h, s, segmented } from "./ui";
+import { h, s, segmented, toast } from "./ui";
 
 export type Range = "week" | "month" | "year";
 
@@ -154,8 +155,10 @@ export function renderStats(root: HTMLElement, settings: Settings, range: Range,
           )
         : h("p", { class: "muted" }, t("logToSeeAvgs")),
     ),
+    ...(range === "week" ? [weekCompare(totals, settings)] : []),
     weightCard(settings, rangeDays[0], onLogWeight),
     topFoods(rangeDays[0]),
+    badgesCard(settings),
   );
 }
 
@@ -340,5 +343,67 @@ function topFoods(from: string): HTMLElement {
     top.length
       ? h("ol", { class: "top-foods" }, ...top.map((f) => h("li", {}, h("span", {}, f.name), h("span", { class: "muted" }, `${f.n}×`))))
       : h("p", { class: "muted" }, t("nothingInRange")),
+  );
+}
+
+function weekCompare(totals: Map<string, DayTotal>, settings: Settings): HTMLElement {
+  const u = settings.units;
+  const today = localDate();
+  const span = (from: number) => {
+    const days: DayTotal[] = [];
+    for (let i = from; i < from + 7; i++) {
+      const d = totals.get(addDays(today, -i));
+      if (d) days.push(d);
+    }
+    const avg = (f: (d: DayTotal) => number) => (days.length ? days.reduce((a, d) => a + f(d), 0) / days.length : 0);
+    return { n: days.length, kcal: avg((d) => d.kcal), protein: avg((d) => d.protein) };
+  };
+  const now = span(0);
+  const prev = span(7);
+  const row = (label: string, a: number, b: number, fmt: (n: number) => string) => {
+    const diff = a - b;
+    const arrow = !b || Math.abs(diff) < 0.5 ? "" : diff > 0 ? "▲" : "▼";
+    return h(
+      "div",
+      { class: "cmp-row" },
+      h("span", {}, label),
+      h("span", { class: "cmp-val" }, fmt(a)),
+      h("span", { class: `cmp-diff${arrow === "▲" ? " up" : arrow === "▼" ? " down" : ""}` }, arrow ? `${arrow} ${fmt(Math.abs(diff))}` : "–"),
+    );
+  };
+  return h(
+    "section",
+    { class: "card" },
+    h("h3", {}, t("weekCompare")),
+    row(t("avgCalories"), now.kcal, prev.kcal, (n) => fmtEnergy(n, u)),
+    row(t("avgProtein"), now.protein, prev.protein, (n) => `${Math.round(n)} g`),
+    row(t("daysLogged"), now.n, prev.n, (n) => String(Math.round(n))),
+  );
+}
+
+function badgesCard(settings: Settings): HTMLElement {
+  const earned = earnedBadges(settings);
+  return h(
+    "section",
+    { class: "card" },
+    h("div", { class: "card-head" }, h("h3", {}, t("achievements")), h("span", { class: "muted small" }, t("badgesCount", { n: earned.size, m: BADGES.length }))),
+    h(
+      "div",
+      { class: "badge-grid" },
+      ...BADGES.map((b, i) => {
+        const got = earned.has(b.id);
+        return h(
+          "button",
+          {
+            class: `badge-tile${got ? " got" : ""}`,
+            style: `animation-delay:${i * 30}ms`,
+            "aria-label": `${badgeName(b)}: ${badgeDesc(b)}${got ? "" : ` (${t("locked")})`}`,
+            onclick: () => toast(`${b.emoji} ${badgeName(b)} · ${badgeDesc(b)}`),
+          },
+          h("span", { class: "badge-emoji" }, got ? b.emoji : "🔒"),
+          h("span", { class: "badge-name" }, badgeName(b)),
+        );
+      }),
+    ),
   );
 }
