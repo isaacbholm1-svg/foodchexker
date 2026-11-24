@@ -283,6 +283,8 @@ const fi: Dict = {
     loadCount: "Lasketaan kaloreita…",
     loadAlmost: "Melkein valmista…",
     tagline: "Kuvaa. Tiedä. Voi hyvin.",
+    kidMaintain: "Lapsille sovellus suunnittelee tasapainoista syömistä ilman kalorivajetta tai -ylijäämää. Kasvu hoitaa loput.",
+    noteKid: "Lasten tarpeet vaihtelevat paljon. Käytä lukuja suuntaa-antavina yhdessä vanhemman kanssa, ja kysy lääkäriltä, jos olet epävarma.",
     aiPowered: "Tekoälyn tuottama",
     ideasTitle: "Ideoita sinulle",
     ideasLoading: "Mietitään ideoita…",

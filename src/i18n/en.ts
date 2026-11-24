@@ -292,6 +292,8 @@ const en = {
     loadCount: "Counting calories…",
     loadAlmost: "Almost done…",
     tagline: "Snap it. Know it. Feel great.",
+    kidMaintain: "For kids, the app plans balanced eating with no calorie deficit or surplus. Growing takes care of the rest.",
+    noteKid: "Kids' needs vary a lot. Use these numbers as a rough guide together with a parent, and ask a doctor if you're unsure.",
     aiPowered: "AI-powered",
     ideasTitle: "Ideas for you",
     ideasLoading: "Thinking of ideas…",

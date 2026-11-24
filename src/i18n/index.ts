@@ -1,6 +1,12 @@
 import en from "./en";
 import sv from "./sv";
 import fi from "./fi";
+import de from "./de";
+import es from "./es";
+import fr from "./fr";
+import it from "./it";
+import pt from "./pt";
+import nl from "./nl";
 
 export type StringKey = keyof typeof en.s;
 export type PoolKey = keyof typeof en.pools;
@@ -13,16 +19,22 @@ export interface Dict {
   friend: string;
 }
 
-export type Lang = "en" | "sv" | "fi"; // more languages coming later
+export type Lang = "en" | "sv" | "fi" | "de" | "es" | "fr" | "it" | "pt" | "nl";
 
 /** Language list shown in the picker: native name + English name (sent to the AI). */
 export const LANGUAGES: { code: Lang; name: string; english: string; flag: string; locale: string }[] = [
   { code: "en", name: "English", english: "English", flag: "🇬🇧", locale: "en" },
   { code: "sv", name: "Svenska", english: "Swedish", flag: "🇸🇪", locale: "sv-SE" },
   { code: "fi", name: "Suomi", english: "Finnish", flag: "🇫🇮", locale: "fi-FI" },
+  { code: "de", name: "Deutsch", english: "German", flag: "🇩🇪", locale: "de-DE" },
+  { code: "es", name: "Español", english: "Spanish", flag: "🇪🇸", locale: "es-ES" },
+  { code: "fr", name: "Français", english: "French", flag: "🇫🇷", locale: "fr-FR" },
+  { code: "it", name: "Italiano", english: "Italian", flag: "🇮🇹", locale: "it-IT" },
+  { code: "pt", name: "Português", english: "Brazilian Portuguese", flag: "🇧🇷", locale: "pt-BR" },
+  { code: "nl", name: "Nederlands", english: "Dutch", flag: "🇳🇱", locale: "nl-NL" },
 ];
 
-const DICTS: Record<Lang, Dict> = { en, sv, fi };
+const DICTS: Record<Lang, Dict> = { en, sv, fi, de, es, fr, it, pt, nl };
 
 let current: Lang = "en";
 
