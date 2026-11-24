@@ -400,7 +400,7 @@ function badgesCard(settings: Settings): HTMLElement {
             "aria-label": `${badgeName(b)}: ${badgeDesc(b)}${got ? "" : ` (${t("locked")})`}`,
             onclick: () => toast(`${b.emoji} ${badgeName(b)} · ${badgeDesc(b)}`),
           },
-          h("span", { class: "badge-emoji" }, got ? b.emoji : "🔒"),
+          h("span", { class: "badge-icon" }, h("span", { class: "badge-emoji" }, b.emoji), got ? null : h("span", { class: "badge-lock", "aria-hidden": "true" }, "🔒")),
           h("span", { class: "badge-name" }, badgeName(b)),
         );
       }),
