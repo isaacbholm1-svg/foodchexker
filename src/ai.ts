@@ -118,7 +118,7 @@ export async function analyzeMeal(opts: {
     break;
   }
   if (remembered) removeStorage(MODEL_KEY);
-  const detail = lastError instanceof ApiError ? ` (${lastError.status} · ${lastModel})` : "";
+  const detail = lastError instanceof ApiError ? ` (${lastError.status} · ${lastModel}${googleReason(lastError)})` : "";
   if (lastError instanceof ApiError && modelUnavailable(lastError)) {
     removeStorage(LIST_KEY); // ask Google for a fresh model list next time
     throw new AnalysisError(
@@ -130,6 +130,13 @@ export async function analyzeMeal(opts: {
   throw new AnalysisError(describeApiError(lastError) + detail);
 }
 
+/** Google's own short error text, e.g. "Request contains an invalid argument." */
+function googleReason(err: ApiError): string {
+  const m = err.message.match(/"message"\s*:\s*"([^"]{1,140})/) ?? err.message.match(/^(?:got status: \d+[^.]*\.\s*)?(.{1,140})/);
+  const text = m?.[1]?.trim();
+  return text ? ` · ${text}` : "";
+}
+
 type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
 type Mode = "schema" | "plain";
 
@@ -139,8 +146,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function transient(err: unknown): boolean {
   return err instanceof ApiError && (err.status >= 500 || err.status === 408);
 }
+/** A 400 that is about the key or country, which no retry or other model can fix. */
+function accountProblem(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 401 || err.status === 403 || (err.status === 400 && /api[ _]?key|location|country|region|billing/i.test(err.message)));
+}
+/** Google rejected this request shape (for example the structured JSON format). A plain request may work. */
 function schemaRejected(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 400 && /schema|json|mime/i.test(err.message);
+  return err instanceof ApiError && err.status === 400 && !accountProblem(err);
 }
 /** Each model has its own quota and load, so most failures are worth trying on the next model. */
 function tryNextModel(err: unknown): boolean {
@@ -258,7 +270,7 @@ function describeApiError(err: unknown): string {
       return "Google's free AI isn't available in your country.";
     }
     if (err.status >= 500) return "Google's AI service is busy. Try again in a moment.";
-    return `The request was rejected (${err.status}). Try again.`;
+    return "Google rejected the request. Try again, or send this message to whoever set up the app.";
   }
   if (err instanceof TypeError) return "Couldn't reach the AI service. Check your internet connection.";
   return err instanceof Error ? err.message : "Something went wrong. Try again.";
