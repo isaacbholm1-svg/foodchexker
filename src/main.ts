@@ -805,3 +805,6 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
 applyTheme();
 render();
 if (!settings.onboarded) setTimeout(editProfile, 300);
+
+// Ask the browser to keep this app's data even when the phone is low on space.
+navigator.storage?.persist?.().catch(() => {});

@@ -86,67 +86,87 @@ export async function analyzeMeal(opts: {
   const remembered = readStorage(MODEL_KEY);
   const listed = await availableModels(ai, opts.apiKey);
   const candidates = listed.length ? listed : MODELS;
-  const order = [...new Set([...(remembered && candidates.includes(remembered) ? [remembered] : []), ...candidates])].slice(0, 6);
+  const order = [...new Set([...(remembered && candidates.includes(remembered) ? [remembered] : []), ...candidates])].slice(0, 5);
 
   let lastError: unknown;
+  let lastModel = "";
+  const plainModels = (readStorage(PLAIN_KEY) || "").split(",");
   for (const model of order) {
-    try {
-      const raw = await generate(ai, model, parts);
-      writeStorage(MODEL_KEY, model);
-      return normalize(raw);
-    } catch (err) {
-      if (err instanceof AnalysisError) throw err;
-      lastError = err;
-      if (modelUnavailable(err)) continue; // try the next free model
-      break;
+    // Try the structured format first, then a plain request (also used as the retry when Google is busy).
+    const modes: Mode[] = plainModels.includes(model) ? ["plain", "plain"] : ["schema", "plain"];
+    for (let i = 0; i < modes.length; i++) {
+      try {
+        const raw = await generate(ai, model, parts, modes[i]);
+        writeStorage(MODEL_KEY, model);
+        if (modes[i] === "plain" && i === 1 && schemaRejected(lastError)) {
+          writeStorage(PLAIN_KEY, [...plainModels.filter(Boolean), model].join(",")); // skip structured mode next time
+        }
+        return normalize(raw);
+      } catch (err) {
+        if (err instanceof AnalysisError) throw err;
+        console.warn("[FoodChecker] AI call failed", model, modes[i], err);
+        lastError = err;
+        lastModel = model;
+        if (i === 0 && (schemaRejected(err) || transient(err))) {
+          if (transient(err)) await sleep(900);
+          continue; // retry this model with a plain request
+        }
+        break;
+      }
     }
+    if (tryNextModel(lastError)) continue;
+    break;
   }
   if (remembered) removeStorage(MODEL_KEY);
+  const detail = lastError instanceof ApiError ? ` (${lastError.status} · ${lastModel})` : "";
   if (lastError instanceof ApiError && modelUnavailable(lastError)) {
     removeStorage(LIST_KEY); // ask Google for a fresh model list next time
     throw new AnalysisError(
-      lastError.status === 429
+      (lastError.status === 429
         ? "Your key has no free AI quota right now. Wait a few minutes and try again, or try again tomorrow."
-        : "Google couldn't find a free AI model for your key. Make sure the key was made at aistudio.google.com/apikey, then try again.",
+        : "Google couldn't find a free AI model for your key. Make sure the key was made at aistudio.google.com/apikey, then try again.") + detail,
     );
   }
-  throw new AnalysisError(describeApiError(lastError));
+  throw new AnalysisError(describeApiError(lastError) + detail);
 }
 
 type Part = { text: string } | { inlineData: { mimeType: string; data: string } };
+type Mode = "schema" | "plain";
 
-/** One model call. Uses Google's structured JSON mode; if a model rejects that, retries with plain JSON instructions. */
-async function generate(ai: GoogleGenAI, model: string, parts: Part[]): Promise<string> {
-  const read = (res: Awaited<ReturnType<typeof ai.models.generateContent>>) => {
-    if (res.promptFeedback?.blockReason) {
-      throw new AnalysisError("The AI declined to analyze this. Try a different photo or description.");
-    }
-    const raw = res.text;
-    if (!raw) throw new AnalysisError("The AI didn't return an answer. Please try again.");
-    return raw;
-  };
-  const plainModels = (readStorage(PLAIN_KEY) || "").split(",");
-  if (!plainModels.includes(model)) {
-    try {
-      return read(
-        await ai.models.generateContent({
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Google is overloaded or had a hiccup: worth retrying or trying another model. */
+function transient(err: unknown): boolean {
+  return err instanceof ApiError && (err.status >= 500 || err.status === 408);
+}
+function schemaRejected(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 400 && /schema|json|mime/i.test(err.message);
+}
+/** Each model has its own quota and load, so most failures are worth trying on the next model. */
+function tryNextModel(err: unknown): boolean {
+  return err instanceof ApiError && (modelUnavailable(err) || transient(err) || err.status === 429 || schemaRejected(err));
+}
+
+/** One model call, either with Google's structured JSON mode or with plain JSON instructions. */
+async function generate(ai: GoogleGenAI, model: string, parts: Part[], mode: Mode): Promise<string> {
+  const res =
+    mode === "schema"
+      ? await ai.models.generateContent({
           model,
           contents: [{ role: "user", parts }],
           config: { systemInstruction: SYSTEM, responseMimeType: "application/json", responseJsonSchema: SCHEMA, temperature: 0.2 },
-        }),
-      );
-    } catch (err) {
-      if (!(err instanceof ApiError && err.status === 400 && /schema|json|mime/i.test(err.message))) throw err;
-      writeStorage(PLAIN_KEY, [...plainModels.filter(Boolean), model].join(",")); // skip structured mode next time
-    }
+        })
+      : await ai.models.generateContent({
+          model,
+          contents: [{ role: "user", parts: [...parts, { text: `Reply with only JSON matching this schema, no other text:\n${JSON.stringify(SCHEMA)}` }] }],
+          config: { systemInstruction: SYSTEM, temperature: 0.2 },
+        });
+  if (res.promptFeedback?.blockReason) {
+    throw new AnalysisError("The AI declined to analyze this. Try a different photo or description.");
   }
-  return read(
-    await ai.models.generateContent({
-      model,
-      contents: [{ role: "user", parts: [...parts, { text: `Reply with only JSON matching this schema, no other text:\n${JSON.stringify(SCHEMA)}` }] }],
-      config: { systemInstruction: SYSTEM, temperature: 0.2 },
-    }),
-  );
+  const raw = res.text;
+  if (!raw) throw new AnalysisError("The AI didn't return an answer. Please try again.");
+  return raw;
 }
 
 const LIST_KEY = "fc.models.v2";
