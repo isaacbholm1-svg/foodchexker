@@ -71,6 +71,7 @@ export interface Settings {
   showWater: boolean;
   glassMl: number;
   language?: Lang; // unset = follow the phone's language
+  features?: Partial<Record<string, boolean>>; // feature switches; missing = on
 }
 
 const ENTRIES_KEY = "fc.entries.v1";
@@ -80,6 +81,23 @@ const WEIGHTS_KEY = "fc.weights.v1";
 const WATER_KEY = "fc.water.v1";
 const FAVORITES_KEY = "fc.favorites.v1";
 const BADGES_KEY = "fc.badges.v1";
+
+// Data for features added later (recipes, shopping list, …). Every key registered here is
+// included in backups and removed by "Delete everything".
+const EXTRA_KEYS = new Set<string>(["fc.chat.v1"]);
+
+/** A small persistent value for a feature. */
+export function persisted<T>(key: string, fallback: T): { get: () => T; set: (v: T) => void } {
+  EXTRA_KEYS.add(key);
+  let value = read<T>(key, fallback);
+  return {
+    get: () => value,
+    set: (v: T) => {
+      value = v;
+      write(key, v);
+    },
+  };
+}
 
 export const DEFAULT_TARGETS: Targets = { calories: 2000, protein: 120, carbs: 225, fat: 65, fiber: 28, waterMl: 2000 };
 
@@ -268,7 +286,7 @@ export function markBadgesSeen(ids: Iterable<string>): void {
 /** Full backup. The API key is left out on purpose so a shared backup file never leaks it. */
 export function exportBackup(settings: Settings): string {
   const { apiKey: _omit, ...rest } = settings;
-  return JSON.stringify({ app: "foodchecker", version: 2, exportedAt: new Date().toISOString(), settings: rest, entries, weights, water, favorites, badges: [...seenBadges()] });
+  return JSON.stringify({ app: "foodchecker", version: 2, exportedAt: new Date().toISOString(), settings: rest, entries, weights, water, favorites, badges: [...seenBadges()], extra: Object.fromEntries([...EXTRA_KEYS].map((k) => [k, read(k, null)])) });
 }
 
 export function importBackup(json: string, keepApiKey: string): void {
@@ -283,6 +301,9 @@ export function importBackup(json: string, keepApiKey: string): void {
   favorites = Array.isArray(data.favorites) ? data.favorites : [];
   write(FAVORITES_KEY, favorites);
   write(BADGES_KEY, Array.isArray(data.badges) ? data.badges : []);
+  if (data.extra && typeof data.extra === "object") {
+    for (const [k, v] of Object.entries(data.extra)) if (k.startsWith("fc.") && v != null) write(k, v);
+  }
   persistEntries();
   write(WEIGHTS_KEY, weights);
   write(WATER_KEY, water);
@@ -290,7 +311,7 @@ export function importBackup(json: string, keepApiKey: string): void {
 }
 
 export function resetEverything(): void {
-  for (const k of [ENTRIES_KEY, SETTINGS_KEY, OLD_SETTINGS_KEY, WEIGHTS_KEY, WATER_KEY, FAVORITES_KEY, BADGES_KEY, "fc.model.v1", "fc.model.v2", "fc.models.v2", "fc.models.v3", "fc.plainmodels.v1"]) {
+  for (const k of [...EXTRA_KEYS, "fc.ideas.v1", ENTRIES_KEY, SETTINGS_KEY, OLD_SETTINGS_KEY, WEIGHTS_KEY, WATER_KEY, FAVORITES_KEY, BADGES_KEY, "fc.model.v1", "fc.model.v2", "fc.models.v2", "fc.models.v3", "fc.plainmodels.v1"]) {
     try {
       localStorage.removeItem(k);
     } catch {

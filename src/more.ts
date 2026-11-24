@@ -45,13 +45,13 @@ export function renderMore(root: HTMLElement, header: () => HTMLElement | null, 
     return;
   }
   current = null;
-  const tile = (p: MorePage, i: number) =>
+  const tile = (p: MorePage) =>
     h(
       "button",
       {
         class: "more-tile",
         "data-page": p.id,
-        style: `--tile:${p.color};animation-delay:${i * 35}ms`,
+        style: `--tile:${p.color}`,
         onclick: () => {
           if (p.open) return p.open();
           current = p.id;
@@ -71,9 +71,9 @@ export function renderMore(root: HTMLElement, header: () => HTMLElement | null, 
       h("h1", { class: "page-title" }, t("more")),
       header(),
       tools.length ? h("h2", { class: "more-section" }, t("moreTools")) : null,
-      tools.length ? h("div", { class: "more-grid" }, ...tools.map(tile)) : null,
+      tools.length ? h("div", { class: "more-grid" }, ...tools.map((p) => tile(p))) : null,
       h("h2", { class: "more-section" }, t("moreApp")),
-      h("div", { class: "more-grid" }, ...app.map((p, i) => tile(p, i + tools.length))),
+      h("div", { class: "more-grid" }, ...app.map((p) => tile(p))),
     ].filter((n): n is HTMLElement => !!n),
   );
 }

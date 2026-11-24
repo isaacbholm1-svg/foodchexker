@@ -1,3 +1,4 @@
+import { featureOn } from "./features";
 import { BADGES, badgeDesc, badgeName, earnedBadges } from "./badges";
 import { locale, t } from "./i18n";
 import { fmtEnergy, fmtNum, fmtWeight, energyValue, weightValue, goalEta } from "./nutrition";
@@ -156,9 +157,9 @@ export function renderStats(root: HTMLElement, settings: Settings, range: Range,
         : h("p", { class: "muted" }, t("logToSeeAvgs")),
     ),
     ...(range === "week" ? [weekCompare(totals, settings)] : []),
-    weightCard(settings, rangeDays[0], onLogWeight),
+    ...(featureOn("weight", settings) ? [weightCard(settings, rangeDays[0], onLogWeight)] : []),
     topFoods(rangeDays[0]),
-    badgesCard(settings),
+    ...(featureOn("badges", settings) ? [badgesCard(settings)] : []),
   );
 }
 

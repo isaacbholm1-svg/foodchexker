@@ -1094,7 +1094,7 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.45); }
 .subhead { padding: 6px 0 0; }
 .back-btn { border: 0; background: none; color: var(--accent); font-size: 17px; font-weight: 600; padding: 6px 0; }
 .more-section { font-size: 13px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin: 18px 4px 8px; }
-.more-grid { display: flex; flex-direction: column; background: var(--card); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
+.more-grid { animation: fade-in 0.18s ease-out; display: flex; flex-direction: column; background: var(--card); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
 .more-tile {
   display: flex;
   align-items: center;
@@ -1104,7 +1104,6 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.45); }
   background: none;
   text-align: left;
   padding: 12px 14px;
-  animation: card-in 0.4s ease-out both;
 }
 .more-tile + .more-tile { border-top: 1px solid var(--line); }
 .more-tile:active { background: var(--bg); }
@@ -1128,3 +1127,27 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.45); }
 .about-card p { text-align: left; }
 .about-logo { font-size: 56px; animation: an-bob 2.4s ease-in-out infinite; }
 .more-page .page-title { margin-top: 4px; }
+
+/* ---------- Recipe book & shopping list ---------- */
+.msg-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.chip.small { font-size: 13px; padding: 6px 10px; }
+.empty-note { color: var(--muted); text-align: center; line-height: 1.5; }
+.recipe-list { display: grid; gap: 8px; margin-bottom: 8px; }
+.recipe-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; color: inherit; font: inherit; margin: 0; animation: pop-in 0.35s both; }
+.recipe-emoji { font-size: 26px; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: color-mix(in srgb, #e8833a 18%, transparent); flex: none; }
+.recipe-card { max-width: none; width: 100%; margin: 10px 0; border-radius: 18px; }
+.recipe-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 18px; }
+.recipe-actions .btn { flex: 1 1 auto; }
+.shop-list { display: grid; gap: 2px; margin-top: 12px; }
+.shop-item { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); transition: opacity 0.25s; }
+.shop-item:last-child { border-bottom: 0; }
+.shop-check { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.shop-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.shop-item.done { opacity: 0.5; }
+.shop-item.done .shop-text { text-decoration: line-through; }
+.shop-item .remove { opacity: 0.6; }
+
+/* Faster taps on iPhone (no double-tap-zoom wait) */
+button, a, label, .tab, input[type="checkbox"] { touch-action: manipulation; }
+.more-page { animation: fade-in 0.15s ease-out; }
+.features-link { margin-bottom: 14px; }
