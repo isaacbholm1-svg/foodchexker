@@ -10,6 +10,7 @@ import { myFoods, renderMyFoods, type MyFood } from "./myfoods";
 import { checkinPrompt, renderCheckin } from "./checkin";
 import { renderFasting } from "./fasting";
 import { shareDay } from "./shareday";
+import { renderReport } from "./report";
 import { FEEDBACK_ACCESS_KEY } from "./config";
 import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
 import { confetti, countUp, replay } from "./fx";
@@ -1321,6 +1322,16 @@ function shareToday() {
   });
 }
 
+registerMorePage({
+  id: "report",
+  emoji: "📊",
+  color: "#2f9e5e",
+  title: "report",
+  desc: "reportDesc",
+  section: "tools",
+  visible: () => featureOn("report"),
+  render: (root) => renderReport(root, { settings: () => settings, goal: () => (settings.profile ? goalLabel(settings.profile.goal) : "eat balanced"), aiBadge, openSettings: () => setTab("settings") }),
+});
 registerMorePage({ id: "checkin", emoji: "😊", color: "#f2b134", title: "checkin", desc: "checkinDesc", section: "tools", visible: () => featureOn("checkin"), render: (root) => renderCheckin(root) });
 registerMorePage({ id: "fasting", emoji: "⏱️", color: "#3aa8c1", title: "fasting", desc: "fastingDesc", section: "tools", visible: () => featureOn("fasting") && fastingAllowed(), render: (root) => renderFasting(root) });
 registerMorePage({ id: "shareday", emoji: "📤", color: "#5b8def", title: "shareDay", desc: "shareDayDesc", section: "tools", visible: () => featureOn("shareday"), open: () => { viewDate = localDate(); shareToday(); } });

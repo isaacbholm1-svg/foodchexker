@@ -21,7 +21,8 @@ export type FeatureId =
   | "myfoods"
   | "checkin"
   | "fasting"
-  | "shareday";
+  | "shareday"
+  | "report";
 
 export interface FeatureInfo {
   id: FeatureId;
@@ -51,6 +52,7 @@ export const FEATURES: FeatureInfo[] = [
   { id: "streak", emoji: "🔥", label: "streak", group: "today" },
   { id: "badges", emoji: "🏆", label: "f_badges", hint: "f_badgesHint", group: "progress" },
   { id: "weight", emoji: "⚖️", label: "f_weight", group: "progress" },
+  { id: "report", emoji: "📊", label: "report", hint: "reportDesc", group: "progress" },
 ];
 
 let source: () => Settings;

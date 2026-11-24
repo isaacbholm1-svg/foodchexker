@@ -492,6 +492,48 @@ export async function planDay(opts: {
   return meals.sort((a, b) => MEALS_ORDER.indexOf(a.meal) - MEALS_ORDER.indexOf(b.meal));
 }
 
+// ---------------- weekly report ----------------
+
+export interface WeeklyReport {
+  headline: string;
+  wins: string[];
+  focus: string[];
+  tip: string;
+}
+
+const REPORT_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string", description: "One upbeat sentence summing up the week, max 14 words" },
+    wins: { type: "array", items: { type: "string" }, description: "2–3 specific things that went well, each one short sentence" },
+    focus: { type: "array", items: { type: "string" }, description: "1–2 concrete, kind suggestions for next week, each one short sentence" },
+    tip: { type: "string", description: "One practical food tip that fits the person, one sentence" },
+  },
+  required: ["headline", "wins", "focus", "tip"],
+};
+
+const REPORT_SYSTEM = `You are a warm, encouraging dietitian coach inside a calorie-tracking app. Write a short weekly report from the numbers you get.
+Rules: be specific and use the numbers; celebrate effort and consistency; never shame or use guilt; never suggest eating less than the target or skipping meals; if the person ate far below target, gently encourage eating enough; if few days were logged, praise what was logged and suggest an easy way to log more. If the person is under 18, focus on balanced eating, energy and growth, never on weight loss.`;
+
+export async function weeklyReport(apiKey: string, summary: string): Promise<WeeklyReport> {
+  const raw = await callGemini(apiKey, [{ text: `${summary}\nWrite everything in ${languageEnglishName()}.` }], REPORT_SYSTEM, REPORT_SCHEMA);
+  let d: Record<string, unknown>;
+  try {
+    d = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+  } catch {
+    throw new AnalysisError(t("aiUnreadable"));
+  }
+  const strs = (v: unknown, n: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map((x) => x.slice(0, 220)).slice(0, n) : []);
+  const r = {
+    headline: typeof d.headline === "string" ? d.headline.slice(0, 160) : "",
+    wins: strs(d.wins, 3),
+    focus: strs(d.focus, 2),
+    tip: typeof d.tip === "string" ? d.tip.slice(0, 220) : "",
+  };
+  if (!r.headline && !r.wins.length) throw new AnalysisError(t("aiUnreadable"));
+  return r;
+}
+
 // ---------------- food chat ----------------
 
 export interface ChatTurn {
