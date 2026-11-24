@@ -1,5 +1,7 @@
 // The food chat tab: an AI that only talks about food, nutrition and recipes.
 import { AnalysisError, chatAnswer, type ChatTurn } from "./ai";
+import { addToShopping, ingredientsOf, saveRecipe } from "./recipes";
+import { featureOn } from "./features";
 import { t, type StringKey } from "./i18n";
 import { h } from "./ui";
 
@@ -33,7 +35,7 @@ const SPARKLE =
   '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M10 2.5c.45 4.1 2.4 6.05 6.5 6.5-4.1.45-6.05 2.4-6.5 6.5-.45-4.1-2.4-6.05-6.5-6.5 4.1-.45 6.05-2.4 6.5-6.5Z"/><path fill="currentColor" d="M18.5 13.5c.25 2.25 1.25 3.25 3.5 3.5-2.25.25-3.25 1.25-3.5 3.5-.25-2.25-1.25-3.25-3.5-3.5 2.25-.25 3.25-1.25 3.5-3.5Z"/></svg>';
 
 /** Safe mini-markdown: headings, bold, bullet and numbered lists. Text is never parsed as HTML. */
-function md(text: string): Node[] {
+export function md(text: string): Node[] {
   const out: Node[] = [];
   let list: HTMLElement | null = null;
   const inline = (s: string) => {
@@ -114,7 +116,21 @@ export function renderChat(root: HTMLElement, deps: { apiKey: string; context: (
     messages.forEach((m, i) => {
       const bubble = h("div", { class: `msg ${m.role === "user" ? "me" : "ai"}${m.error ? " err" : ""}`, style: i === messages.length - 1 ? "" : "animation:none" });
       if (m.role === "user" || m.error) bubble.append(m.text);
-      else bubble.append(...md(m.text));
+      else {
+        bubble.append(...md(m.text));
+        const ingr = ingredientsOf(m.text);
+        const canSave = featureOn("recipes");
+        const canShop = featureOn("shopping");
+        if (ingr.length >= 3 && (canSave || canShop))
+          bubble.append(
+            h(
+              "div",
+              { class: "msg-actions" },
+              canSave ? h("button", { class: "chip small", onclick: () => saveRecipe(m.text) }, t("saveRecipe")) : null,
+              canShop ? h("button", { class: "chip small", onclick: () => addToShopping(ingr) }, t("addIngredients")) : null,
+            ),
+          );
+      }
       if (m.sources?.length) {
         bubble.append(
           h(

@@ -1,7 +1,9 @@
 import "./style.css";
 import { analyzeMeal, AnalysisError, suggestIdeas, type Analysis, type FoodItem, type Idea } from "./ai";
 import { renderChat } from "./chat";
-import { registerMorePage, renderMore } from "./more";
+import { registerMorePage, renderMore, openMorePage, currentMorePage } from "./more";
+import { FEATURES, featureOn, setFeature, setFeatureSource, type FeatureId } from "./features";
+import { renderRecipes, renderShopping } from "./recipes";
 import { FEEDBACK_ACCESS_KEY } from "./config";
 import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
 import { confetti, countUp, replay } from "./fx";
@@ -51,6 +53,7 @@ const mealLabel = (m: MealType) => t(m === "snack" ? "snacks" : m);
 const ACCENTS: Settings["accent"][] = ["green", "blue", "purple", "pink", "orange", "teal"];
 
 let settings = loadSettings();
+setFeatureSource(() => settings);
 setLanguage(settings.language ?? detectLanguage());
 let viewDate = localDate();
 let tab: "today" | "chat" | "stats" | "more" | "settings" = "today";
@@ -85,7 +88,13 @@ function applyTheme() {
 }
 
 // ======================= navigation =======================
+function applyFeatureTabs() {
+  const chatTab = document.querySelector<HTMLElement>(".tab[data-tab=chat]");
+  if (chatTab) chatTab.hidden = !featureOn("chat");
+}
+
 function setTab(t: typeof tab) {
+  if (t === "chat" && !featureOn("chat")) t = "today";
   if (t === "today") animateIn = true;
   tab = t;
   for (const b of document.querySelectorAll<HTMLButtonElement>(".tab")) {
@@ -106,7 +115,7 @@ function render() {
   if (tab === "today") renderToday();
   else if (tab === "chat") renderChat($("view-chat"), { apiKey: settings.apiKey, context: chatContext, openSettings: () => setTab("settings") });
   else if (tab === "stats") renderStats($("view-stats"), settings, statsRange, (r) => { statsRange = r; render(); }, openWeightDialog);
-  else if (tab === "more") renderMore($("view-more"), moreHeader, render);
+  else if (tab === "more") renderMore($("view-more"), () => null, render);
   else renderSettings();
 }
 
@@ -157,7 +166,7 @@ function renderToday() {
     h("button", { class: "icon-btn", "aria-label": t("prevDay"), onclick: () => goDay(-1) }, "‹"),
     h("button", { class: "day-label", onclick: () => { viewDate = localDate(); animateIn = true; render(); } }, dayLabel(viewDate)),
     h("button", { class: "icon-btn", "aria-label": t("nextDay"), disabled: isToday, onclick: () => goDay(1) }, "›"),
-    streak > 0 ? h("span", { class: "streak-pill", "aria-label": t("streakAria", { n: streak }) }, h("span", { class: "flame" }, "🔥"), String(streak)) : null,
+    streak > 0 && featureOn("streak") ? h("span", { class: "streak-pill", "aria-label": t("streakAria", { n: streak }) }, h("span", { class: "flame" }, "🔥"), String(streak)) : null,
   );
 
   // --- motivation ---
@@ -231,7 +240,7 @@ function renderToday() {
     );
   };
 
-  const score = dayScore(entries, waterMl, settings);
+  const score = featureOn("score") ? dayScore(entries, waterMl, settings) : null;
   const summary = h(
     "section",
     { class: "card summary-card" },
@@ -291,17 +300,17 @@ function renderToday() {
     h(
       "div",
       { class: "add-row" },
-      h("button", { type: "button", class: "scan-btn", onclick: openScanner }, h("span", { class: "barcode-icon", "aria-hidden": "true" }), h("span", {}, t("scanBarcode"))),
-      h("button", { type: "button", class: "scan-btn quick-btn", onclick: () => openQuickAdd() }, h("span", {}, t("quickAdd"))),
+      featureOn("scanner") ? h("button", { type: "button", class: "scan-btn", onclick: openScanner }, h("span", { class: "barcode-icon", "aria-hidden": "true" }), h("span", {}, t("scanBarcode"))) : null,
+      featureOn("quickadd") ? h("button", { type: "button", class: "scan-btn quick-btn", onclick: () => openQuickAdd() }, h("span", {}, t("quickAdd"))) : null,
     ),
     h("div", { class: "or" }, t("orDescribe")),
     form,
-    favs.length ? chipRow(t("favorites"), favs, (i) => showReview({ meal_name: favs[i].name, items: favs[i].items.map((x) => ({ ...x })), confidence: "high", notes: "" }, { thumb: favs[i].thumb, preview: favs[i].thumb, noBadge: true, source: "favorite" })) : null,
-    recents.length ? chipRow(t("logAgainNoAi"), recents, (i) => reLog(recents[i])) : null,
+    favs.length && featureOn("quickadd") ? chipRow(t("favorites"), favs, (i) => showReview({ meal_name: favs[i].name, items: favs[i].items.map((x) => ({ ...x })), confidence: "high", notes: "" }, { thumb: favs[i].thumb, preview: favs[i].thumb, noBadge: true, source: "favorite" })) : null,
+    recents.length && featureOn("quickadd") ? chipRow(t("logAgainNoAi"), recents, (i) => reLog(recents[i])) : null,
   );
 
   // --- suggestions + AI ideas ---
-  const sugg = isToday ? suggestionsCard({ entries, totals, fiber, sugar, waterMl }) : null;
+  const sugg = isToday && featureOn("suggestions") ? suggestionsCard({ entries, totals, fiber, sugar, waterMl }) : null;
 
   // --- water ---
   let waterCard: HTMLElement | null = null;
@@ -371,7 +380,7 @@ function renderToday() {
   const dayIndex = Math.floor(parseDate(viewDate).getTime() / 86400000);
   const tip = allTips[(((dayIndex + tipOffset) % allTips.length) + allTips.length) % allTips.length];
   const tipSpace = tip.indexOf(" ");
-  const tipCard = h(
+  const tipCard = !featureOn("tips") ? null : h(
     "button",
     { class: "card tip-card", onclick: () => { tipOffset++; render(); replay($("view-today").querySelector(".tip-card")!, "flip"); } },
     h("span", { class: "tip-emoji", "aria-hidden": "true" }, tip.slice(0, tipSpace)),
@@ -542,9 +551,9 @@ function openAddSheet(meal: MealType) {
       "div",
       { class: "add-options" },
       opt("📷", t("snapPhoto"), () => { mini.close(); photoInput.click(); }),
-      opt("▥", t("scanBarcode"), () => { mini.close(); openScanner(); }),
+      featureOn("scanner") ? opt("▥", t("scanBarcode"), () => { mini.close(); openScanner(); }) : null,
       opt("💬", t("describeIt"), () => { mini.close(); const i = document.getElementById("text-input") as HTMLInputElement | null; i?.scrollIntoView({ block: "center", behavior: "smooth" }); i?.focus(); }),
-      opt("✏️", t("quickAddTitle"), () => { mini.close(); openQuickAdd(meal); }),
+      featureOn("quickadd") ? opt("✏️", t("quickAddTitle"), () => { mini.close(); openQuickAdd(meal); }) : null,
     ),
     h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", onclick: () => { pendingMeal = null; mini.close(); } }, t("cancel"))),
   );
@@ -619,6 +628,7 @@ function logNew(e: { name: string; meal: MealType; items: FoodItem[]; thumb?: st
 let badgeQueue: string[] = [];
 
 function checkBadges(silent = false) {
+  if (!featureOn("badges")) return;
   const earned = earnedBadges(settings);
   const seen = seenBadges();
   const fresh = [...earned].filter((id) => !seen.has(id));
@@ -1085,7 +1095,7 @@ function renderSettings() {
         )
       : h("p", { class: "muted" }, t("noProfile")),
     h("button", { class: "btn wide", onclick: editProfile }, p ? t("editProfile") : t("setupProfile")),
-    h("button", { class: "btn wide ghost", onclick: openWeightDialog }, t("logWeightBtn")),
+    featureOn("weight") ? h("button", { class: "btn wide ghost", onclick: openWeightDialog }, t("logWeightBtn")) : null,
   );
 
   // Targets
@@ -1154,22 +1164,6 @@ function renderSettings() {
     ),
   );
 
-  // Features
-  const featuresCard = section(
-    t("features"),
-    toggle(t("motivationMsgs"), settings.showMotivation, (v) => { settings.showMotivation = v; save(); }, t("motivationHint")),
-    toggle(t("waterTracker"), settings.showWater, (v) => { settings.showWater = v; save(); }),
-    unitRow(
-      u.water === "ml" ? t("glassMl") : t("glassOz"),
-      segmented(
-        [200, 250, 330, 500].map((ml) => ({ value: String(ml), label: u.water === "ml" ? `${ml}` : `${Math.round(ml / 29.5735)}` })),
-        String(settings.glassMl),
-        (v) => { settings.glassMl = Number(v); save(); },
-        u.water === "ml" ? t("glassMl") : t("glassOz"),
-      ),
-    ),
-  );
-
   // AI key
   const keyInput = h("input", { type: "password", value: settings.apiKey, placeholder: "AIza...", autocomplete: "off" });
   const aiCard = section(
@@ -1229,7 +1223,7 @@ function renderSettings() {
     targetsCard,
     unitsCard,
     appearanceCard,
-    featuresCard,
+    h("button", { class: "card more-profile features-link", onclick: () => { openMorePage("features"); setTab("more"); } }, h("span", { class: "more-icon", style: "--tile:#e0a526", "aria-hidden": "true" }, "🧩"), h("span", { class: "more-text" }, h("span", { class: "more-title" }, t("features")), h("span", { class: "more-desc" }, t("featuresDesc"))), h("span", { class: "more-chev", "aria-hidden": "true" }, "›")),
     aiCard,
     dataCard,
     about,
@@ -1266,18 +1260,62 @@ function applyLanguage() {
 }
 
 // ---------------- More tab ----------------
-function moreHeader(): HTMLElement | null {
-  const p = settings.profile;
-  if (!p) return null;
-  return h(
-    "button",
-    { class: "card more-profile", onclick: () => setTab("settings") },
-    h("span", { class: "avatar", "aria-hidden": "true" }, (p.name[0] || "?").toUpperCase()),
-    h("span", { class: "more-text" }, h("span", { class: "profile-name" }, p.name), h("span", { class: "muted small" }, `${GOAL_EMOJI[p.goal]} ${goalLabel(p.goal)} · ${fmtEnergy(settings.targets.calories, U())}`)),
-    h("span", { class: "more-chev", "aria-hidden": "true" }, "›"),
+registerMorePage({
+  id: "recipes",
+  emoji: "📖",
+  color: "#e8833a",
+  title: "recipes",
+  desc: "recipesDesc",
+  section: "tools",
+  visible: () => featureOn("recipes"),
+  render: (root) => renderRecipes(root, { logText: (text) => runAnalysis({ text }), goChat: () => setTab("chat") }),
+});
+registerMorePage({ id: "shopping", emoji: "🛒", color: "#2f9e5e", title: "shopping", desc: "shoppingDesc", section: "tools", visible: () => featureOn("shopping"), render: (root) => renderShopping(root) });
+registerMorePage({ id: "features", emoji: "🧩", color: "#e0a526", title: "features", desc: "featuresDesc", section: "app", render: (root) => renderFeatures(root) });
+
+function renderFeatures(root: HTMLElement) {
+  const groups: [string, FeatureId[]][] = [
+    [t("today"), FEATURES.filter((f) => f.group === "today").map((f) => f.id)],
+    [t("progress"), FEATURES.filter((f) => f.group === "progress").map((f) => f.id)],
+    [t("moreTools"), FEATURES.filter((f) => f.group === "tools").map((f) => f.id)],
+  ];
+  const row = (id: FeatureId) => {
+    const f = FEATURES.find((x) => x.id === id)!;
+    const el = toggle(`${f.emoji}  ${t(f.label).replace(/^\p{Extended_Pictographic}\uFE0F?\s*/u, "")}`, featureOn(id), (v) => {
+      setFeature(settings, id, v);
+      save();
+      applyFeatureTabs();
+      if (id === "water") renderFeatures(root);
+    }, f.hint ? t(f.hint) : undefined);
+    return el;
+  };
+  root.replaceChildren(
+    h("h1", { class: "page-title" }, t("features")),
+    h("p", { class: "muted" }, t("featuresIntro")),
+    ...groups.map(([title, ids]) =>
+      h(
+        "section",
+        { class: "card settings-card" },
+        h("h3", {}, title),
+        ...ids.map(row),
+        ...(ids.includes("water") && featureOn("water")
+          ? [
+              unitRow(
+                U().water === "ml" ? t("glassMl") : t("glassOz"),
+                segmented(
+                  [200, 250, 330, 500].map((ml) => ({ value: String(ml), label: U().water === "ml" ? `${ml}` : `${Math.round(ml / 29.5735)}` })),
+                  String(settings.glassMl),
+                  (v) => { settings.glassMl = Number(v); save(); },
+                  U().water === "ml" ? t("glassMl") : t("glassOz"),
+                ),
+              ),
+            ]
+          : []),
+      ),
+    ),
+    h("button", { class: "btn wide ghost", onclick: () => { settings.features = {}; settings.showWater = true; settings.showMotivation = true; save(); applyFeatureTabs(); renderFeatures(root); } }, t("featuresAllOn")),
   );
 }
-
 registerMorePage({ id: "settings", emoji: "⚙️", color: "#7d8590", title: "settings", desc: "settingsDesc", section: "app", open: () => setTab("settings") });
 registerMorePage({
   id: "feedback",
@@ -1476,8 +1514,17 @@ function finishOnboarding(r: OnboardingResult) {
 
 // ======================= wiring =======================
 for (const b of document.querySelectorAll<HTMLButtonElement>(".tab")) {
-  b.addEventListener("click", () => setTab(b.dataset.tab as typeof tab));
+  b.addEventListener("click", () => {
+    const next = b.dataset.tab as typeof tab;
+    // Like iOS: tapping the tab you're already on takes you back to its start.
+    if (next === "more" && (tab === "more" || tab === "settings")) {
+      if (tab === "more" && !currentMorePage()) return void window.scrollTo({ top: 0, behavior: "smooth" });
+      openMorePage(null);
+    }
+    setTab(next);
+  });
 }
+applyFeatureTabs();
 
 const photoInput = $<HTMLInputElement>("photo-input");
 photoInput.addEventListener("change", () => {
