@@ -16,6 +16,8 @@ An iPhone-friendly calorie counter. Snap a photo of your meal (or type what you 
 - **Water tracker** with adjustable glass size.
 - **Motivation**: dozens of messages using your name that react to your day (morning, on track, goal hit, streaks, protein and water goals, weekends, and kind words on harder days). Tap one for another.
 - **Customize**: kg/lb, cm/ft-in, kcal/kJ, ml/fl oz; light, dark or auto theme; 6 accent colors; turn features on or off; edit targets by hand.
+- **Languages**: English, Swedish and Finnish (more coming). Picked on the first screen or in Settings; starts in the phone's language. The AI answers in the chosen language too.
+- **Polish**: animated start-up screen and an animated "looking at your food" screen while the AI works.
 - **Your data**: stored only on your phone; back up and restore (backups never include the AI key), CSV export, delete everything.
 
 ## Put it on your iPhone
@@ -52,7 +54,8 @@ npm run dev
 | `src/onboarding.ts` | The setup wizard. |
 | `src/nutrition.ts` | Target calculations, safety rules and unit conversions. |
 | `src/stats.ts` | Progress tab and charts. |
-| `src/motivation.ts` | Motivation messages. |
+| `src/motivation.ts` | Picks the motivation message. |
+| `src/i18n/` | Translations (`en.ts` is the base; copy it to add a language). |
 | `public/sw.js` | Service worker so the app opens offline. |
 
 ## Is it safe if the site is public?

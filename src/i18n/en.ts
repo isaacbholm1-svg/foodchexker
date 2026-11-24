@@ -282,7 +282,7 @@ const en = {
     aiRateLimit: "You've hit the free usage limit. Wait a minute (or until tomorrow if it keeps happening) and try again.",
     aiCountry: "Google's free AI isn't available in your country.",
     aiBusy: "Google's AI service is busy. Try again in a moment.",
-    aiRejected: "The request was rejected ({status}). Try again.",
+    aiRejected: "Google rejected the request. Try again, or send this message to whoever set up the app.",
     aiOffline: "Couldn't reach the AI service. Check your internet connection.",
     meal: "Meal",
     food: "Food",

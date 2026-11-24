@@ -273,7 +273,7 @@ const fi: Dict = {
     aiRateLimit: "Ilmaisen käytön raja täyttyi. Odota minuutti (tai huomiseen, jos tämä toistuu) ja yritä uudelleen.",
     aiCountry: "Googlen ilmainen tekoäly ei ole saatavilla maassasi.",
     aiBusy: "Googlen tekoälypalvelu on ruuhkautunut. Yritä hetken päästä uudelleen.",
-    aiRejected: "Pyyntö hylättiin ({status}). Yritä uudelleen.",
+    aiRejected: "Google hylkäsi pyynnön. Yritä uudelleen tai lähetä tämä viesti sovelluksen asentajalle.",
     aiOffline: "Tekoälypalveluun ei saatu yhteyttä. Tarkista internetyhteys.",
     meal: "Ateria",
     food: "Ruoka",

@@ -1,4 +1,5 @@
 import type { FoodItem } from "./ai";
+import { t, type Lang } from "./i18n";
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 export type Sex = "male" | "female" | "other";
@@ -55,6 +56,7 @@ export interface Settings {
   showMotivation: boolean;
   showWater: boolean;
   glassMl: number;
+  language?: Lang; // unset = follow the phone's language
 }
 
 const ENTRIES_KEY = "fc.entries.v1";
@@ -220,7 +222,7 @@ export function importBackup(json: string, keepApiKey: string): void {
   const data = JSON.parse(json);
   // "foodchexker" = backups made before the app was renamed.
   if (!data || (data.app !== "foodchecker" && data.app !== "foodchexker") || !Array.isArray(data.entries)) {
-    throw new Error("That file isn't a FoodChecker backup.");
+    throw new Error(t("notBackup"));
   }
   entries = data.entries;
   weights = Array.isArray(data.weights) ? data.weights : [];

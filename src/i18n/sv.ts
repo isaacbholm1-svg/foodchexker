@@ -273,7 +273,7 @@ const sv: Dict = {
     aiRateLimit: "Du har nått gränsen för gratis användning. Vänta en minut (eller till i morgon om det fortsätter) och försök igen.",
     aiCountry: "Googles gratis AI finns inte i ditt land.",
     aiBusy: "Googles AI-tjänst är upptagen. Försök igen om en stund.",
-    aiRejected: "Förfrågan nekades ({status}). Försök igen.",
+    aiRejected: "Google nekade förfrågan. Försök igen, eller skicka det här meddelandet till den som satte upp appen.",
     aiOffline: "Kunde inte nå AI-tjänsten. Kontrollera din internetanslutning.",
     meal: "Måltid",
     food: "Mat",
