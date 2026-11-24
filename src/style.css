@@ -1151,3 +1151,25 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.45); }
 button, a, label, .tab, input[type="checkbox"] { touch-action: manipulation; }
 .more-page { animation: fade-in 0.15s ease-out; }
 .features-link { margin-bottom: 14px; }
+
+/* ---------- Day planner ---------- */
+.planner-top .field { margin-top: 6px; }
+.plan-error { color: var(--warn); margin: 10px 0 0; }
+.plan-loading, .plan-empty { text-align: center; padding: 8px 0; }
+.plan-loading .an-dots { justify-content: center; margin-bottom: 14px; }
+.plan-chef { font-size: 52px; animation: an-bob 1.6s ease-in-out infinite; }
+.plan-sk { display: flex; flex-direction: column; text-align: left; }
+.plan-total { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-weight: 650; margin: 4px 4px 10px; }
+.plan-meal { animation: card-in 0.45s ease-out both; position: relative; }
+.plan-meal-head { display: flex; align-items: center; gap: 8px; }
+.plan-emoji { font-size: 24px; }
+.plan-when { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); flex: 1; }
+.pm-kcal { font-weight: 700; color: var(--accent); }
+.plan-title { margin: 6px 0 4px !important; font-size: 17px !important; }
+.plan-detail { margin: 0 0 6px; }
+.plan-macros { margin: 0 0 8px; color: var(--muted); }
+.plan-ingr { margin: 0 0 10px; }
+.plan-ingr summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 14px; }
+.plan-ingr ul { margin: 6px 0 0; padding-left: 20px; font-size: 14px; }
+.plan-meal.done { opacity: 0.75; }
+.plan-meal.done .plan-title { text-decoration: line-through; text-decoration-color: var(--accent); }

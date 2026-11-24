@@ -400,6 +400,98 @@ export async function suggestIdeas(opts: {
     .filter((i) => i.title);
 }
 
+// ---------------- AI day planner ----------------
+
+export interface PlannedMeal {
+  meal: "breakfast" | "lunch" | "dinner" | "snack";
+  emoji: string;
+  title: string;
+  detail: string;
+  portion: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  ingredients: string[];
+}
+
+const PLAN_SCHEMA = {
+  type: "object",
+  properties: {
+    meals: {
+      type: "array",
+      description: "The day's meals in order: breakfast, lunch, dinner and 1–2 snacks",
+      items: {
+        type: "object",
+        properties: {
+          meal: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] },
+          emoji: { type: "string", description: "One food emoji" },
+          title: { type: "string", description: "Name of the dish, max 6 words" },
+          detail: { type: "string", description: "One short sentence: how to make it or why it fits" },
+          portion: { type: "string", description: "The portion, e.g. '1 bowl (350 g)'" },
+          calories: num,
+          protein_g: num,
+          carbs_g: num,
+          fat_g: num,
+          ingredients: { type: "array", items: { type: "string" }, description: "Shopping-list style ingredients with amounts" },
+        },
+        required: ["meal", "emoji", "title", "detail", "portion", "calories", "protein_g", "carbs_g", "fat_g", "ingredients"],
+      },
+    },
+  },
+  required: ["meals"],
+};
+
+const PLAN_SYSTEM = `You are a friendly dietitian inside a calorie-tracking app. Plan one realistic day of meals that together hit the person's calorie and protein targets as closely as possible (within about 5%).
+Rules: use ordinary, affordable foods that are easy to buy in the person's country; simple home cooking; respect their preferences and allergies strictly; give honest calorie and macro estimates; include vegetables, fruit and fiber; never plan fewer than 3 meals. If the person is under 18, plan balanced, growth-friendly food and never a diet.`;
+
+const MEALS_ORDER = ["breakfast", "lunch", "dinner", "snack"] as const;
+
+/** A whole day of meals that fits the targets. */
+export async function planDay(opts: {
+  apiKey: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  goal: string;
+  age?: number;
+  prefs: string;
+}): Promise<PlannedMeal[]> {
+  const text = [
+    `Targets for the day: ${Math.round(opts.calories)} kcal, ${Math.round(opts.protein)} g protein, ${Math.round(opts.carbs)} g carbs, ${Math.round(opts.fat)} g fat.`,
+    `Goal: ${opts.goal}.${opts.age ? ` Age: ${opts.age}.` : ""}`,
+    opts.prefs.trim() ? `Preferences and allergies (follow strictly): ${opts.prefs.trim().slice(0, 300)}` : "No special preferences.",
+    `Write titles, details, portions and ingredients in ${languageEnglishName()}. Vary the dishes – surprise me (seed ${Math.floor(Math.random() * 1e6)}).`,
+  ].join("\n");
+  const raw = await callGemini(opts.apiKey, [{ text }], PLAN_SYSTEM, PLAN_SCHEMA);
+  let data: { meals?: unknown };
+  try {
+    data = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+  } catch {
+    throw new AnalysisError(t("aiUnreadable"));
+  }
+  const n = (v: unknown) => (typeof v === "number" && isFinite(v) && v >= 0 ? Math.round(v) : 0);
+  const meals = (Array.isArray(data.meals) ? data.meals : [])
+    .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
+    .slice(0, 6)
+    .map((i) => ({
+      meal: (MEALS_ORDER as readonly string[]).includes(i.meal as string) ? (i.meal as PlannedMeal["meal"]) : "snack",
+      emoji: typeof i.emoji === "string" && i.emoji.length <= 8 ? i.emoji : "🍽️",
+      title: typeof i.title === "string" ? i.title.slice(0, 60) : "",
+      detail: typeof i.detail === "string" ? i.detail.slice(0, 200) : "",
+      portion: typeof i.portion === "string" ? i.portion.slice(0, 60) : "1 portion",
+      calories: n(i.calories),
+      protein_g: n(i.protein_g),
+      carbs_g: n(i.carbs_g),
+      fat_g: n(i.fat_g),
+      ingredients: Array.isArray(i.ingredients) ? i.ingredients.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 80)).slice(0, 15) : [],
+    }))
+    .filter((m) => m.title);
+  if (!meals.length) throw new AnalysisError(t("aiUnreadable"));
+  return meals.sort((a, b) => MEALS_ORDER.indexOf(a.meal) - MEALS_ORDER.indexOf(b.meal));
+}
+
 // ---------------- food chat ----------------
 
 export interface ChatTurn {
