@@ -234,7 +234,7 @@ export function importBackup(json: string, keepApiKey: string): void {
 }
 
 export function resetEverything(): void {
-  for (const k of [ENTRIES_KEY, SETTINGS_KEY, OLD_SETTINGS_KEY, WEIGHTS_KEY, WATER_KEY, "fc.model.v1", "fc.models.v2", "fc.plainmodels.v1"]) {
+  for (const k of [ENTRIES_KEY, SETTINGS_KEY, OLD_SETTINGS_KEY, WEIGHTS_KEY, WATER_KEY, "fc.model.v1", "fc.model.v2", "fc.models.v2", "fc.models.v3", "fc.plainmodels.v1"]) {
     try {
       localStorage.removeItem(k);
     } catch {
