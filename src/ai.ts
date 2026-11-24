@@ -1,10 +1,13 @@
 import { ApiError, GoogleGenAI } from "@google/genai";
 import { languageEnglishName, t } from "./i18n";
 
-// Free Google Gemini models, tried in order. A model can drop off the free tier over time;
-// when that happens we move on to the next one and remember which one worked.
-const MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3-flash-preview", "gemini-2.5-flash"];
-const MODEL_KEY = "fc.model.v1";
+// Free Google Gemini models, tried in order, used if Google's model list can't be fetched.
+// Flash-Lite comes first: it answers in about a second, while the biggest Flash models are
+// often overloaded on the free tier. A model that works is remembered for next time.
+const MODELS = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-flash-latest"];
+const REQUEST_TIMEOUT_MS = 20_000; // one attempt
+const TOTAL_BUDGET_MS = 45_000; // all attempts together
+const MODEL_KEY = "fc.model.v2";
 
 export interface FoodItem {
   name: string;
@@ -71,7 +74,9 @@ export async function analyzeMeal(opts: {
   image?: { base64: string; mediaType: "image/jpeg" };
   text?: string;
 }): Promise<Analysis> {
-  const ai = new GoogleGenAI({ apiKey: opts.apiKey });
+  // v1beta has every model (the "-latest" names only exist there) and the structured JSON format.
+  const ai = new GoogleGenAI({ apiKey: opts.apiKey, apiVersion: "v1beta", httpOptions: { timeout: REQUEST_TIMEOUT_MS } });
+  const started = Date.now();
 
   const parts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[] = [];
   if (opts.image) parts.push({ inlineData: { mimeType: opts.image.mediaType, data: opts.image.base64 } });
@@ -94,6 +99,7 @@ export async function analyzeMeal(opts: {
   let lastModel = "";
   const plainModels = (readStorage(PLAIN_KEY) || "").split(",");
   for (const model of order) {
+    if (Date.now() - started > TOTAL_BUDGET_MS) break;
     // Try the structured format first, then a plain request (also used as the retry when Google is busy).
     const modes: Mode[] = plainModels.includes(model) ? ["plain", "plain"] : ["schema", "plain"];
     for (let i = 0; i < modes.length; i++) {
@@ -109,7 +115,7 @@ export async function analyzeMeal(opts: {
         console.warn("[FoodChecker] AI call failed", model, modes[i], err);
         lastError = err;
         lastModel = model;
-        if (i === 0 && (schemaRejected(err) || transient(err))) {
+        if (i === 0 && (schemaRejected(err) || transient(err)) && !timedOut(err) && Date.now() - started < TOTAL_BUDGET_MS) {
           if (transient(err)) await sleep(900);
           continue; // retry this model with a plain request
         }
@@ -146,7 +152,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Google is overloaded or had a hiccup: worth retrying or trying another model. */
 function transient(err: unknown): boolean {
-  return err instanceof ApiError && (err.status >= 500 || err.status === 408);
+  return (err instanceof ApiError && (err.status >= 500 || err.status === 408)) || timedOut(err);
+}
+/** The request took longer than REQUEST_TIMEOUT_MS (the model is probably overloaded). */
+function timedOut(err: unknown): boolean {
+  return err instanceof Error && !(err instanceof ApiError) && /abort|timed? ?out/i.test(`${err.name} ${err.message}`);
 }
 /** A 400 that is about the key or country, which no retry or other model can fix. */
 function accountProblem(err: unknown): boolean {
@@ -158,7 +168,7 @@ function schemaRejected(err: unknown): boolean {
 }
 /** Each model has its own quota and load, so most failures are worth trying on the next model. */
 function tryNextModel(err: unknown): boolean {
-  return err instanceof ApiError && (modelUnavailable(err) || transient(err) || err.status === 429 || schemaRejected(err));
+  return timedOut(err) || (err instanceof ApiError && (modelUnavailable(err) || transient(err) || err.status === 429 || schemaRejected(err)));
 }
 
 /** One model call, either with Google's structured JSON mode or with plain JSON instructions. */
@@ -183,7 +193,7 @@ async function generate(ai: GoogleGenAI, model: string, parts: Part[], mode: Mod
   return raw;
 }
 
-const LIST_KEY = "fc.models.v2";
+const LIST_KEY = "fc.models.v3";
 const PLAIN_KEY = "fc.plainmodels.v1"; // models that rejected structured JSON mode
 const LIST_MAX_AGE = 3 * 24 * 3600 * 1000;
 
@@ -215,9 +225,9 @@ async function availableModels(ai: GoogleGenAI, apiKey: string): Promise<string[
   }
   const version = (n: string) => parseFloat(n.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? "0");
   const score = (n: string) => {
-    if (n === "gemini-flash-latest") return 1000;
-    if (n === "gemini-flash-lite-latest") return 900;
-    let s = version(n) * 10 + (/lite/.test(n) ? 0 : 100);
+    if (n === "gemini-flash-lite-latest") return 1000;
+    if (n === "gemini-flash-latest") return 50;
+    let s = version(n) * 10 + (/lite/.test(n) ? 100 : 0); // Flash-Lite first: fast and rarely overloaded
     if (/preview|exp/.test(n)) s -= 5;
     if (/-\d{3}$|-\d{2}-\d{4}$/.test(n)) s -= 2; // pinned snapshots after the plain name
     return s;
@@ -274,6 +284,7 @@ function describeApiError(err: unknown): string {
     if (err.status >= 500) return t("aiBusy");
     return t("aiRejected");
   }
+  if (timedOut(err)) return t("aiBusy");
   if (err instanceof TypeError) return t("aiOffline");
   return err instanceof Error ? err.message : t("somethingWrong");
 }
