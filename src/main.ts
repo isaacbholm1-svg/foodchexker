@@ -1,5 +1,6 @@
 import "./style.css";
 import { analyzeMeal, AnalysisError, type Analysis, type FoodItem } from "./ai";
+import { LookupError, lookupBarcode, startScanner, type ScanControls } from "./barcode";
 import { prepareImage } from "./image";
 import { motivation } from "./motivation";
 import { ACTIVITY, GOALS, energyValue, fmtEnergy, fmtHeight, fmtWater, fmtWeight, makePlan, weightToKg, weightValue } from "./nutrition";
@@ -196,6 +197,7 @@ function renderToday() {
     "section",
     { class: "card add", "aria-label": "Add food" },
     h("label", { class: "snap-btn", for: "photo-input" }, h("span", { class: "cam", "aria-hidden": "true" }, "📷"), h("span", {}, "Snap or pick a food photo")),
+    h("button", { type: "button", class: "scan-btn", onclick: openScanner }, h("span", { class: "barcode-icon", "aria-hidden": "true" }), h("span", {}, "Scan a barcode")),
     h("div", { class: "or" }, "or describe it"),
     form,
     recents.length
@@ -299,7 +301,7 @@ function renderEntry(e: Entry) {
 }
 
 function reLog(e: Entry) {
-  showReview({ meal_name: e.name, items: e.items.map((i) => ({ ...i })), confidence: "high", notes: "" }, { thumb: e.thumb, preview: e.thumb, fromHistory: true });
+  showReview({ meal_name: e.name, items: e.items.map((i) => ({ ...i })), confidence: "high", notes: "" }, { thumb: e.thumb, preview: e.thumb, noBadge: true });
 }
 
 // ======================= analysis + review =======================
@@ -338,7 +340,7 @@ async function runAnalysis(input: { file?: File; text?: string }) {
   }
 }
 
-function showReview(result: Analysis, opt: { thumb?: string; preview?: string; fromHistory?: boolean }) {
+function showReview(result: Analysis, opt: { thumb?: string; preview?: string; noBadge?: boolean }) {
   const u = U();
   const items: FoodItem[] = result.items.map((i) => ({ ...i }));
   let servings = 1;
@@ -404,7 +406,7 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; f
   const parts: (Node | null)[] = [
     opt.preview ? h("img", { class: "review-photo", src: opt.preview, alt: "" }) : null,
     nameInput,
-    opt.fromHistory ? null : h("span", { class: `badge ${result.confidence}` }, `${result.confidence} confidence`),
+    opt.noBadge ? null : h("span", { class: `badge ${result.confidence}` }, `${result.confidence} confidence`),
     result.notes ? h("p", { class: "notes" }, result.notes) : null,
     itemsBox,
     h(
@@ -434,6 +436,78 @@ function celebrate(): string {
   const named = ["Nice one, {n}! 👍", "Logged, {n}! ✅", "Keep it up, {n}! 💪", "Great job tracking, {n}! ✨"];
   const pool = name ? [...plain, ...named] : plain;
   return pool[Math.floor(Math.random() * pool.length)].replace("{n}", name ?? "");
+}
+
+// ======================= barcode scanner =======================
+const scanner = $("scanner") as HTMLDialogElement;
+let scanControls: ScanControls | null = null;
+
+function stopScanner() {
+  scanControls?.stop();
+  scanControls = null;
+}
+scanner.addEventListener("close", stopScanner);
+
+function openScanner() {
+  const video = h("video", { class: "scan-video", playsinline: "", muted: "", autoplay: "" });
+  video.muted = true;
+  const status = h("p", { class: "scan-status muted small" }, "Starting camera…");
+  const codeInput = h("input", { type: "text", inputmode: "numeric", placeholder: "Or type the numbers under the barcode", autocomplete: "off", "aria-label": "Barcode number" });
+  const form = h("form", { class: "text-form" }, codeInput, h("button", { type: "submit", class: "btn primary" }, "Look up"));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (codeInput.value.trim()) handleCode(codeInput.value.trim());
+  });
+  const viewport = h("div", { class: "scan-viewport" }, video, h("div", { class: "scan-guide", "aria-hidden": "true" }));
+  $("scanner-body").replaceChildren(
+    h("h2", {}, "Scan a barcode"),
+    viewport,
+    status,
+    form,
+    h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", onclick: () => scanner.close() }, "Cancel")),
+  );
+  scanner.showModal();
+
+  async function handleCode(code: string) {
+    stopScanner();
+    viewport.classList.add("found");
+    status.textContent = `Found ${code}. Looking it up…`;
+    try {
+      const found = await lookupBarcode(code);
+      if (!found) {
+        status.replaceChildren(
+          "We couldn't find that product. ",
+          h("button", { class: "link-btn", onclick: () => { scanner.close(); photoInput.click(); } }, "Snap the nutrition label instead"),
+          " and the AI will read it.",
+        );
+        return;
+      }
+      scanner.close();
+      showReview(found.analysis, { thumb: found.image, preview: found.image, noBadge: true });
+    } catch (err) {
+      status.textContent = err instanceof LookupError ? err.message : "Something went wrong. Try again.";
+    }
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    status.textContent = "This browser can't use the camera here. Type the barcode number instead.";
+    viewport.hidden = true;
+    return;
+  }
+  startScanner(video, handleCode)
+    .then((c) => {
+      if (!scanner.open) return c.stop();
+      scanControls = c;
+      status.textContent = "Point the camera at the barcode. Hold steady about a hand's width away.";
+    })
+    .catch((err: unknown) => {
+      viewport.hidden = true;
+      const name = err instanceof Error ? err.name : "";
+      status.textContent =
+        name === "NotAllowedError"
+          ? "Camera access was blocked. Allow camera access for this site in Settings → Safari → Camera, or type the barcode number."
+          : "Couldn't start the camera. Type the barcode number instead.";
+    });
 }
 
 // ======================= weight dialog =======================
@@ -639,9 +713,9 @@ function renderSettings() {
   const dataCard = section(
     "Your data",
     h("p", { class: "muted small" }, "Everything is stored only on this phone. Back up now and then so you don't lose it if Safari's data gets cleared. Backups never include your AI key."),
-    h("button", { class: "btn wide", onclick: () => download(`foodchexker-backup-${localDate()}.json`, exportBackup(settings), "application/json") }, "💾 Back up everything"),
+    h("button", { class: "btn wide", onclick: () => download(`foodchecker-backup-${localDate()}.json`, exportBackup(settings), "application/json") }, "💾 Back up everything"),
     h("button", { class: "btn wide", onclick: () => restoreInput.click() }, "📂 Restore from backup"),
-    h("button", { class: "btn wide", onclick: () => download(`foodchexker-${localDate()}.csv`, exportCsv(), "text/csv") }, "📊 Export food log (CSV)"),
+    h("button", { class: "btn wide", onclick: () => download(`foodchecker-${localDate()}.csv`, exportCsv(), "text/csv") }, "📊 Export food log (CSV)"),
     h(
       "button",
       {
@@ -661,7 +735,7 @@ function renderSettings() {
   const about = h(
     "p",
     { class: "footer-note" },
-    "FoodChexker · AI estimates are a guide, not medical advice. If you have a health condition, are pregnant, or have a history of disordered eating, talk to a doctor before changing how you eat.",
+    "FoodChecker · AI estimates are a guide, not medical advice. If you have a health condition, are pregnant, or have a history of disordered eating, talk to a doctor before changing how you eat.",
   );
 
   root.replaceChildren(h("h1", { class: "page-title" }, "Settings"), profileCard, targetsCard, unitsCard, appearanceCard, featuresCard, aiCard, dataCard, about);
@@ -708,7 +782,7 @@ photoInput.addEventListener("change", () => {
   if (file) runAnalysis({ file, text: draftText });
 });
 
-for (const dlg of [review, mini]) {
+for (const dlg of [review, mini, scanner]) {
   dlg.addEventListener("click", (e) => {
     if (e.target === dlg && !dlg.querySelector(".loading")) dlg.close();
   });

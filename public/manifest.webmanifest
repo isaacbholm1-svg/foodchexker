@@ -1,6 +1,6 @@
 {
-  "name": "FoodChexker",
-  "short_name": "FoodChexker",
+  "name": "FoodChecker",
+  "short_name": "FoodChecker",
   "description": "Snap a photo of your food and get calories and macros.",
   "start_url": "./",
   "scope": "./",

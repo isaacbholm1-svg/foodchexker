@@ -1,4 +1,4 @@
-# FoodChexker
+# FoodChecker
 
 An iPhone-friendly calorie counter. Snap a photo of your meal (or type what you ate) and free AI (Google Gemini) estimates the calories, protein, carbs and fat. It runs in Safari and installs to your Home Screen like a regular app, so you don't need a Mac, Xcode or an Apple developer account.
 
@@ -9,6 +9,7 @@ An iPhone-friendly calorie counter. Snap a photo of your meal (or type what you 
 - **Goals**: lose weight, keep weight stable, build muscle, gain weight, or just eat healthier, with a pace and an optional goal weight (plus an estimated date).
 - **Safety rules**: no weight-loss plans for under-18s or people already underweight, a minimum calorie floor, deficits capped at 1% of body weight per week, and no underweight goal weights.
 - **Photo → nutrition**: snap or pick a photo, or type what you ate; free AI estimates each food's portion, calories and macros. Review and edit before saving.
+- **Barcode scanning**: scan a packaged food with the camera (or type the number) and get its nutrition from [Open Food Facts](https://world.openfoodfacts.org), a free open food database. No AI or key needed. If a product isn't found, snap the nutrition label and the AI reads it.
 - **Log again**: one-tap re-logging of recent meals without using the AI.
 - **Daily / weekly / monthly / yearly progress**: calorie charts against your goal, days on target, streaks, average macros, most-eaten foods.
 - **Weight tracking** with a trend chart and goal line.
@@ -20,7 +21,7 @@ An iPhone-friendly calorie counter. Snap a photo of your meal (or type what you 
 ## Put it on your iPhone
 
 1. **Turn on GitHub Pages** (one time): in this repo on GitHub, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
-2. **Deploy**: merge this code into `main`. The workflow in `.github/workflows/deploy.yml` builds the app and publishes it to `https://<your-github-username>.github.io/foodchexker/`.
+2. **Deploy**: merge this code into `main`. The workflow in `.github/workflows/deploy.yml` builds the app and publishes it to `https://<your-github-username>.github.io/<repo-name>/`.
 3. **Install**: open that URL in **Safari** on your iPhone, tap **Share → Add to Home Screen**.
 4. **Get a free AI key** (each person who uses the app does this once): sign in with a Google account at [aistudio.google.com/apikey](https://aistudio.google.com/apikey), tap **Create API key**, copy it, open the app and paste it in Settings. No credit card needed.
 
@@ -44,6 +45,7 @@ npm run dev
 | File | What it does |
 |---|---|
 | `src/ai.ts` | Sends the photo/text to Gemini with a dietitian prompt and a JSON schema, so the answer comes back as structured data (items, portions, kcal, macros, confidence, notes). |
+| `src/barcode.ts` | Camera barcode scanning (ZXing) and Open Food Facts lookup. |
 | `src/image.ts` | Shrinks the photo on the phone before upload (faster and cheaper) and makes thumbnails. |
 | `src/store.ts` | Saves meals, weights, water and settings on the phone; backup/restore. |
 | `src/main.ts` | Today, review sheet, weight log and settings screens. |
@@ -61,7 +63,6 @@ Yes. **No key is in the code or on the website.** Each person pastes their own k
 
 ## Ideas for next steps
 
-- Barcode scanning for packaged foods
 - Favorite/recent meals for one-tap logging
 - Weekly charts and streaks
 - Sync across devices (would need a backend and accounts)
