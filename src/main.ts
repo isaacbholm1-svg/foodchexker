@@ -1,6 +1,7 @@
 import "./style.css";
 import { analyzeMeal, AnalysisError, suggestIdeas, type Analysis, type FoodItem, type Idea } from "./ai";
 import { renderChat } from "./chat";
+import { registerMorePage, renderMore } from "./more";
 import { FEEDBACK_ACCESS_KEY } from "./config";
 import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
 import { confetti, countUp, replay } from "./fx";
@@ -52,7 +53,7 @@ const ACCENTS: Settings["accent"][] = ["green", "blue", "purple", "pink", "orang
 let settings = loadSettings();
 setLanguage(settings.language ?? detectLanguage());
 let viewDate = localDate();
-let tab: "today" | "chat" | "stats" | "settings" = "today";
+let tab: "today" | "chat" | "stats" | "more" | "settings" = "today";
 let statsRange: Range = "week";
 let motivationSeed = 0;
 let draftText = "";
@@ -88,12 +89,13 @@ function setTab(t: typeof tab) {
   if (t === "today") animateIn = true;
   tab = t;
   for (const b of document.querySelectorAll<HTMLButtonElement>(".tab")) {
-    if (b.dataset.tab === t) b.setAttribute("aria-current", "page");
+    if (b.dataset.tab === (t === "settings" ? "more" : t)) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
   }
   $("view-today").hidden = t !== "today";
   $("view-chat").hidden = t !== "chat";
   $("view-stats").hidden = t !== "stats";
+  $("view-more").hidden = t !== "more";
   $("view-settings").hidden = t !== "settings";
   render();
   replay($(`view-${t}`), "view-in");
@@ -104,6 +106,7 @@ function render() {
   if (tab === "today") renderToday();
   else if (tab === "chat") renderChat($("view-chat"), { apiKey: settings.apiKey, context: chatContext, openSettings: () => setTab("settings") });
   else if (tab === "stats") renderStats($("view-stats"), settings, statsRange, (r) => { statsRange = r; render(); }, openWeightDialog);
+  else if (tab === "more") renderMore($("view-more"), moreHeader, render);
   else renderSettings();
 }
 
@@ -1218,7 +1221,19 @@ function renderSettings() {
     t("about"),
   );
 
-  root.replaceChildren(h("h1", { class: "page-title" }, t("settings")), languageCard(), profileCard, targetsCard, unitsCard, appearanceCard, featuresCard, aiCard, feedbackCard(), dataCard, about);
+  root.replaceChildren(
+    h("div", { class: "subhead" }, h("button", { class: "back-btn", onclick: () => setTab("more") }, "‹ ", t("more"))),
+    h("h1", { class: "page-title" }, t("settings")),
+    languageCard(),
+    profileCard,
+    targetsCard,
+    unitsCard,
+    appearanceCard,
+    featuresCard,
+    aiCard,
+    dataCard,
+    about,
+  );
 }
 
 function languageCard() {
@@ -1249,6 +1264,71 @@ function changeLanguage(code: (typeof LANGUAGES)[number]["code"]) {
 function applyLanguage() {
   for (const el of document.querySelectorAll<HTMLElement>("[data-i18n]")) el.textContent = t(el.dataset.i18n as StringKey);
 }
+
+// ---------------- More tab ----------------
+function moreHeader(): HTMLElement | null {
+  const p = settings.profile;
+  if (!p) return null;
+  return h(
+    "button",
+    { class: "card more-profile", onclick: () => setTab("settings") },
+    h("span", { class: "avatar", "aria-hidden": "true" }, (p.name[0] || "?").toUpperCase()),
+    h("span", { class: "more-text" }, h("span", { class: "profile-name" }, p.name), h("span", { class: "muted small" }, `${GOAL_EMOJI[p.goal]} ${goalLabel(p.goal)} · ${fmtEnergy(settings.targets.calories, U())}`)),
+    h("span", { class: "more-chev", "aria-hidden": "true" }, "›"),
+  );
+}
+
+registerMorePage({ id: "settings", emoji: "⚙️", color: "#7d8590", title: "settings", desc: "settingsDesc", section: "app", open: () => setTab("settings") });
+registerMorePage({
+  id: "feedback",
+  emoji: "💬",
+  color: "#5b8def",
+  title: "feedbackTitle",
+  desc: "feedbackTileDesc",
+  section: "app",
+  render: (root) => root.replaceChildren(h("h1", { class: "page-title" }, t("feedbackTitle")), feedbackCard()),
+});
+registerMorePage({
+  id: "share",
+  emoji: "📲",
+  color: "#2f9e5e",
+  title: "shareApp",
+  desc: "shareAppDesc",
+  section: "app",
+  open: async () => {
+    const url = location.origin + location.pathname;
+    try {
+      if (navigator.share) await navigator.share({ title: "FoodChecker", text: t("shareAppText"), url });
+      else {
+        await navigator.clipboard.writeText(`${t("shareAppText")} ${url}`);
+        toast(t("linkCopied"));
+      }
+    } catch {
+      /* closed the share sheet */
+    }
+  },
+});
+registerMorePage({
+  id: "about",
+  emoji: "ℹ️",
+  color: "#b06ad9",
+  title: "aboutTitle",
+  desc: "aboutDesc",
+  section: "app",
+  render: (root) =>
+    root.replaceChildren(
+      h("h1", { class: "page-title" }, t("aboutTitle")),
+      h(
+        "section",
+        { class: "card about-card" },
+        h("div", { class: "about-logo", "aria-hidden": "true" }, "🥗"),
+        h("h2", {}, "FoodChecker"),
+        h("p", { class: "muted" }, t("tagline")),
+        h("p", {}, t("aboutPrivacy")),
+        h("p", { class: "muted small" }, t("about")),
+      ),
+    ),
+});
 
 /** What the food chat knows about the user, so answers fit their day. */
 function chatContext(): string {
