@@ -16,87 +16,34 @@
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   </head>
   <body>
-    <div class="app">
-      <header class="topbar">
-        <button class="icon-btn" id="prev-day" aria-label="Previous day">‹</button>
-        <button class="day-label" id="day-label">Today</button>
-        <button class="icon-btn" id="next-day" aria-label="Next day">›</button>
-        <button class="icon-btn settings-btn" id="open-settings" aria-label="Settings">
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6a.5.5 0 0 0 .1-.6l-1.9-3.3a.5.5 0 0 0-.6-.2l-2.4 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-3.8a.5.5 0 0 0-.5.4l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.4-1a.5.5 0 0 0-.6.2L2.5 8.8a.5.5 0 0 0 .1.6l2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6a.5.5 0 0 0-.1.6l1.9 3.3c.1.2.4.3.6.2l2.4-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .2.3.4.5.4h3.8c.2 0 .5-.2.5-.4l.4-2.6a7.3 7.3 0 0 0 1.7-1l2.4 1c.2.1.5 0 .6-.2l1.9-3.3a.5.5 0 0 0-.1-.6l-2-1.6ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
-        </button>
-      </header>
+    <main class="app">
+      <div id="view-today" class="view"></div>
+      <div id="view-stats" class="view" hidden></div>
+      <div id="view-settings" class="view" hidden></div>
+    </main>
 
-      <section class="card summary" aria-label="Daily summary">
-        <div class="ring-wrap">
-          <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
-            <circle class="ring-track" cx="60" cy="60" r="52" />
-            <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="52" />
-          </svg>
-          <div class="ring-text">
-            <div class="ring-num" id="kcal-left">2000</div>
-            <div class="ring-sub" id="kcal-left-label">kcal left</div>
-          </div>
-        </div>
-        <div class="summary-side">
-          <div class="eaten"><span id="kcal-eaten">0</span> / <span id="kcal-goal">2000</span> kcal</div>
-          <div class="macro" data-macro="protein">
-            <div class="macro-head"><span>Protein</span><span class="macro-val"></span></div>
-            <div class="bar"><div class="bar-fill"></div></div>
-          </div>
-          <div class="macro" data-macro="carbs">
-            <div class="macro-head"><span>Carbs</span><span class="macro-val"></span></div>
-            <div class="bar"><div class="bar-fill"></div></div>
-          </div>
-          <div class="macro" data-macro="fat">
-            <div class="macro-head"><span>Fat</span><span class="macro-val"></span></div>
-            <div class="bar"><div class="bar-fill"></div></div>
-          </div>
-        </div>
-      </section>
+    <nav class="tabbar" aria-label="Sections">
+      <button class="tab" data-tab="today" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 3h2v8a2 2 0 0 1-1 1.7V21H4v-8.3A2 2 0 0 1 3 11V3h2v6h0V3Zm-1 0v6h1V3H4Zm2 0v6h1V3H6Zm10 0c2.2 0 4 2.7 4 6 0 2.4-1 4.5-2.4 5.4L18 21h-2.5l.3-6.6C14.5 13.5 13 11.4 13 9c0-3.3 1.3-6 3-6Z"/></svg>
+        <span>Today</span>
+      </button>
+      <button class="tab" data-tab="stats">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 20V10h3v10H4Zm6.5 0V4h3v16h-3ZM17 20v-7h3v7h-3Z"/></svg>
+        <span>Progress</span>
+      </button>
+      <button class="tab" data-tab="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6a.5.5 0 0 0 .1-.6l-1.9-3.3a.5.5 0 0 0-.6-.2l-2.4 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.4h-3.8a.5.5 0 0 0-.5.4l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.4-1a.5.5 0 0 0-.6.2L2.5 8.8a.5.5 0 0 0 .1.6l2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6a.5.5 0 0 0-.1.6l1.9 3.3c.1.2.4.3.6.2l2.4-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .2.3.4.5.4h3.8c.2 0 .5-.2.5-.4l.4-2.6a7.3 7.3 0 0 0 1.7-1l2.4 1c.2.1.5 0 .6-.2l1.9-3.3a.5.5 0 0 0-.1-.6l-2-1.6ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
 
-      <section class="card add" aria-label="Add food">
-        <label class="snap-btn" for="photo-input">
-          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
-          <span>Snap or pick a food photo</span>
-        </label>
-        <input id="photo-input" type="file" accept="image/*" hidden />
-        <div class="or">or describe it</div>
-        <form id="text-form" class="text-form">
-          <input id="text-input" type="text" placeholder="e.g. 2 eggs, toast with butter, coffee" autocomplete="off" enterkeyhint="go" />
-          <button type="submit" class="btn primary">Analyze</button>
-        </form>
-      </section>
-
-      <section id="log" class="log" aria-label="Food log"></section>
-      <p class="footer-note">Estimates from AI. Use them as a guide, not medical advice.</p>
-    </div>
+    <input id="photo-input" type="file" accept="image/*" hidden />
 
     <dialog id="review" class="sheet">
       <div class="sheet-body" id="review-body"></div>
     </dialog>
-
-    <dialog id="settings" class="sheet">
-      <form method="dialog" class="sheet-body" id="settings-form">
-        <h2>Settings</h2>
-        <label class="field">
-          <span>Free Google AI key</span>
-          <input id="set-key" type="password" autocomplete="off" placeholder="AIza..." />
-          <small>Free, no credit card: sign in at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> and tap “Create API key”. It's saved only on this phone and sent only to Google.</small>
-        </label>
-        <div class="field-row">
-          <label class="field"><span>Daily calories</span><input id="set-kcal" type="number" inputmode="numeric" min="0" /></label>
-          <label class="field"><span>Protein (g)</span><input id="set-protein" type="number" inputmode="numeric" min="0" /></label>
-        </div>
-        <div class="field-row">
-          <label class="field"><span>Carbs (g)</span><input id="set-carbs" type="number" inputmode="numeric" min="0" /></label>
-          <label class="field"><span>Fat (g)</span><input id="set-fat" type="number" inputmode="numeric" min="0" /></label>
-        </div>
-        <button type="button" class="btn ghost" id="export-csv">Export log as CSV</button>
-        <div class="sheet-actions">
-          <button value="cancel" class="btn ghost" formnovalidate>Cancel</button>
-          <button value="save" class="btn primary" id="save-settings">Save</button>
-        </div>
-      </form>
+    <dialog id="mini" class="sheet">
+      <div class="sheet-body" id="mini-body"></div>
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

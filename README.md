@@ -4,12 +4,18 @@ An iPhone-friendly calorie counter. Snap a photo of your meal (or type what you 
 
 ## Features
 
-- **Photo → nutrition**: take a picture or pick one from your library; the AI identifies each food, estimates portions, and returns calories and macros.
-- **Text entry**: type "2 eggs, toast with butter, coffee" instead of a photo. Text typed before snapping a photo is sent as extra detail ("only ate half").
-- **Review before saving**: rename the meal, fix any item's calories (its macros scale with it), remove items, change servings, pick the meal.
-- **Daily dashboard**: calorie ring plus protein/carb/fat progress against your goals; browse previous days.
-- **Private**: your log and API key are stored only on your phone. Photos go straight from your phone to Google's AI.
-- **Export**: download your whole log as CSV from Settings.
+- **Setup**: name, age, sex, height, weight (metric or US units), activity level and goal.
+- **Personal targets**: daily calories, protein, carbs, fat, fiber and water, worked out with the Mifflin-St Jeor equation and published guidelines (CDC weight-loss pace, ISSN protein ranges, Dietary Guidelines fat/fiber). Tap "How these numbers were worked out" to see the reasoning.
+- **Goals**: lose weight, keep weight stable, build muscle, gain weight, or just eat healthier, with a pace and an optional goal weight (plus an estimated date).
+- **Safety rules**: no weight-loss plans for under-18s or people already underweight, a minimum calorie floor, deficits capped at 1% of body weight per week, and no underweight goal weights.
+- **Photo → nutrition**: snap or pick a photo, or type what you ate; free AI estimates each food's portion, calories and macros. Review and edit before saving.
+- **Log again**: one-tap re-logging of recent meals without using the AI.
+- **Daily / weekly / monthly / yearly progress**: calorie charts against your goal, days on target, streaks, average macros, most-eaten foods.
+- **Weight tracking** with a trend chart and goal line.
+- **Water tracker** with adjustable glass size.
+- **Motivation**: dozens of messages using your name that react to your day (morning, on track, goal hit, streaks, protein and water goals, weekends, and kind words on harder days). Tap one for another.
+- **Customize**: kg/lb, cm/ft-in, kcal/kJ, ml/fl oz; light, dark or auto theme; 6 accent colors; turn features on or off; edit targets by hand.
+- **Your data**: stored only on your phone; back up and restore (backups never include the AI key), CSV export, delete everything.
 
 ## Put it on your iPhone
 
@@ -39,8 +45,12 @@ npm run dev
 |---|---|
 | `src/ai.ts` | Sends the photo/text to Gemini with a dietitian prompt and a JSON schema, so the answer comes back as structured data (items, portions, kcal, macros, confidence, notes). |
 | `src/image.ts` | Shrinks the photo on the phone before upload (faster and cheaper) and makes thumbnails. |
-| `src/store.ts` | Saves your log and settings in the browser's local storage. |
-| `src/main.ts` | The UI: dashboard, review sheet, settings. |
+| `src/store.ts` | Saves meals, weights, water and settings on the phone; backup/restore. |
+| `src/main.ts` | Today, review sheet, weight log and settings screens. |
+| `src/onboarding.ts` | The setup wizard. |
+| `src/nutrition.ts` | Target calculations, safety rules and unit conversions. |
+| `src/stats.ts` | Progress tab and charts. |
+| `src/motivation.ts` | Motivation messages. |
 | `public/sw.js` | Service worker so the app opens offline. |
 
 ## Is it safe if the site is public?
