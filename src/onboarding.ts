@@ -1,4 +1,5 @@
-import { ACTIVITY, GOALS, KG_PER_LB, bmi, fmtEnergy, fmtWater, fmtWeight, goalAllowed, goalEta, makePlan, paceOptions, weightToKg, weightValue } from "./nutrition";
+import { LANGUAGES, getLanguage, locale, setLanguage, t, type Lang } from "./i18n";
+import { ACTIVITIES, GOALS, GOAL_EMOJI, KG_PER_LB, activityDesc, activityLabel, bmi, fmtEnergy, fmtNum, fmtWater, fmtWeight, goalAllowed, goalDesc, goalEta, goalLabel, makePlan, paceOptions, weightToKg, weightValue } from "./nutrition";
 import type { Activity, Goal, Profile, Sex, Units } from "./store";
 import { h, hideToast, segmented, toast } from "./ui";
 
@@ -16,6 +17,7 @@ export function runOnboarding(opts: {
   firstRun: boolean;
   onDone: (r: OnboardingResult) => void;
   onCancel?: () => void;
+  onLanguage?: (lang: Lang) => void;
 }) {
   const p: Profile = opts.profile
     ? { ...opts.profile }
@@ -23,16 +25,16 @@ export function runOnboarding(opts: {
   const units: Units = { ...opts.units };
   let apiKey = opts.apiKey;
 
-  const overlay = h("div", { class: "onboard", role: "dialog", "aria-modal": "true", "aria-label": "Set up" });
+  const overlay = h("div", { class: "onboard", role: "dialog", "aria-modal": "true", "aria-label": t("setUp") });
   const body = h("div", { class: "ob-body" });
   const dots = h("div", { class: "ob-dots", "aria-hidden": "true" });
-  const back = h("button", { type: "button", class: "icon-btn ob-back", "aria-label": "Back" }, "‹");
-  const next = h("button", { type: "button", class: "btn primary ob-next" }, "Next");
-  overlay.append(h("div", { class: "ob-top" }, back, dots, opts.firstRun ? h("span", { class: "ob-spacer" }) : h("button", { type: "button", class: "icon-btn", "aria-label": "Close", onclick: () => close(true) }, "×")), body, h("div", { class: "ob-bottom" }, next));
+  const back = h("button", { type: "button", class: "icon-btn ob-back", "aria-label": t("back") }, "‹");
+  const next = h("button", { type: "button", class: "btn primary ob-next" }, t("next"));
+  overlay.append(h("div", { class: "ob-top" }, back, dots, opts.firstRun ? h("span", { class: "ob-spacer" }) : h("button", { type: "button", class: "icon-btn", "aria-label": t("close"), onclick: () => close(true) }, "×")), body, h("div", { class: "ob-bottom" }, next));
   document.body.append(overlay);
   document.body.classList.add("no-scroll");
 
-  type Step = { render: () => (Node | null)[]; valid?: () => string | null; nextLabel?: string };
+  type Step = { render: () => (Node | null)[]; valid?: () => string | null; nextLabel?: () => string };
 
   const field = (label: string, input: HTMLElement, suffix?: string) =>
     h("label", { class: "field" }, h("span", {}, label), suffix ? h("div", { class: "with-suffix" }, input, h("span", { class: "suffix" }, suffix)) : input);
@@ -65,49 +67,63 @@ export function runOnboarding(opts: {
 
   if (opts.firstRun) {
     steps.push({
-      nextLabel: "Let's go",
+      nextLabel: () => t("letsGo"),
       render: () => [
-        h("div", { class: "ob-hero" }, "🥗"),
-        h("h1", {}, "Welcome to FoodChecker"),
-        h("p", { class: "lead" }, "Snap a photo of your food and free AI counts the calories for you."),
         h(
-          "ul",
-          { class: "ob-list" },
-          h("li", {}, "📸 Photo or text → calories and macros"),
-          h("li", {}, "🎯 Personal targets from your body and goal"),
-          h("li", {}, "📊 Daily, weekly and yearly progress"),
-          h("li", {}, "🔒 Everything stays on your phone"),
+          "div",
+          { class: "lang-pick", role: "radiogroup", "aria-label": t("language") },
+          ...LANGUAGES.map((l) =>
+            h(
+              "button",
+              {
+                type: "button",
+                class: "lang-chip",
+                role: "radio",
+                "aria-checked": String(getLanguage() === l.code),
+                onclick: () => {
+                  setLanguage(l.code);
+                  opts.onLanguage?.(l.code);
+                  show();
+                },
+              },
+              `${l.flag} ${l.name}`,
+            ),
+          ),
         ),
-        h("p", { class: "muted small" }, "Setup takes about a minute."),
+        h("div", { class: "ob-hero" }, "🥗"),
+        h("h1", {}, t("welcomeTitle")),
+        h("p", { class: "lead" }, t("welcomeLead")),
+        h("ul", { class: "ob-list" }, h("li", {}, t("welcome1")), h("li", {}, t("welcome2")), h("li", {}, t("welcome3")), h("li", {}, t("welcome4"))),
+        h("p", { class: "muted small" }, t("welcomeTime")),
       ],
     });
   }
 
   steps.push({
-    valid: () => (p.name.trim() ? null : "Please enter your name."),
+    valid: () => (p.name.trim() ? null : t("nameRequired")),
     render: () => {
-      const input = h("input", { type: "text", value: p.name, placeholder: "Your first name", autocomplete: "given-name", maxlength: 30 });
+      const input = h("input", { type: "text", value: p.name, placeholder: t("namePlaceholder"), autocomplete: "given-name", maxlength: 30 });
       input.addEventListener("input", () => (p.name = input.value));
       setTimeout(() => input.focus(), 50);
-      return [h("h2", {}, "What should we call you?"), h("p", { class: "muted" }, "Used for your daily motivation messages."), field("Name", input)];
+      return [h("h2", {}, t("nameTitle")), h("p", { class: "muted" }, t("nameDesc")), field(t("name"), input)];
     },
   });
 
   steps.push({
-    valid: () => (p.age >= 13 && p.age <= 100 ? null : p.age > 0 && p.age < 13 ? "FoodChecker is for ages 13 and up." : "Please enter your age."),
+    valid: () => (p.age >= 13 && p.age <= 100 ? null : p.age > 0 && p.age < 13 ? t("tooYoung") : t("ageRequired")),
     render: () => [
-      h("h2", {}, "About you"),
-      h("p", { class: "muted" }, "Your age and sex change how many calories your body burns."),
-      field("Age", numInput(p.age, (v) => (p.age = Math.round(v || 0)), { inputmode: "numeric", min: 13, max: 100 }), "years"),
-      h("div", { class: "field" }, h("span", {}, "Sex"), segmented<Sex>([{ value: "female", label: "Female" }, { value: "male", label: "Male" }, { value: "other", label: "Other" }], p.sex, (v) => (p.sex = v), "Sex")),
-      h("p", { class: "muted small" }, "“Other” uses a value halfway between the male and female formulas."),
+      h("h2", {}, t("aboutYou")),
+      h("p", { class: "muted" }, t("aboutYouDesc")),
+      field(t("age"), numInput(p.age, (v) => (p.age = Math.round(v || 0)), { inputmode: "numeric", min: 13, max: 100 }), t("years")),
+      h("div", { class: "field" }, h("span", {}, t("sex")), segmented<Sex>([{ value: "female", label: t("female") }, { value: "male", label: t("male") }, { value: "other", label: t("other") }], p.sex, (v) => (p.sex = v), t("sex"))),
+      h("p", { class: "muted small" }, t("otherNote")),
     ],
   });
 
   steps.push({
     valid: () => {
-      if (!(p.heightCm >= 100 && p.heightCm <= 250)) return "Please enter a valid height.";
-      if (!(p.weightKg >= 30 && p.weightKg <= 300)) return "Please enter a valid weight.";
+      if (!(p.heightCm >= 100 && p.heightCm <= 250)) return t("invalidHeight");
+      if (!(p.weightKg >= 30 && p.weightKg <= 300)) return t("invalidWeight");
       return null;
     },
     render: () => {
@@ -115,7 +131,7 @@ export function runOnboarding(opts: {
       const draw = () => {
         let heightField: HTMLElement;
         if (units.height === "cm") {
-          heightField = field("Height", numInput(p.heightCm ? Math.round(p.heightCm) : undefined, (v) => (p.heightCm = v || 0), { inputmode: "numeric" }), "cm");
+          heightField = field(t("height"), numInput(p.heightCm ? Math.round(p.heightCm) : undefined, (v) => (p.heightCm = v || 0), { inputmode: "numeric" }), "cm");
         } else {
           const totalIn = p.heightCm ? Math.round(p.heightCm / 2.54) : 0;
           let ft = totalIn ? Math.floor(totalIn / 12) : 0;
@@ -124,7 +140,7 @@ export function runOnboarding(opts: {
           heightField = h(
             "div",
             { class: "field" },
-            h("span", {}, "Height"),
+            h("span", {}, t("height")),
             h(
               "div",
               { class: "field-row" },
@@ -138,11 +154,11 @@ export function runOnboarding(opts: {
           h(
             "div",
             { class: "field" },
-            h("span", {}, "Units"),
+            h("span", {}, t("units")),
             segmented(
               [
-                { value: "metric", label: "Metric (kg, cm)" },
-                { value: "imperial", label: "US (lb, ft)" },
+                { value: "metric", label: t("metric") },
+                { value: "imperial", label: t("imperial") },
               ],
               units.weight === "kg" ? "metric" : "imperial",
               (v) => {
@@ -151,24 +167,24 @@ export function runOnboarding(opts: {
                 units.water = v === "metric" ? "ml" : "floz";
                 draw();
               },
-              "Units",
+              t("units"),
             ),
           ),
           heightField,
-          field("Current weight", numInput(w, (v) => (p.weightKg = weightToKg(v || 0, units))), units.weight),
+          field(t("currentWeight"), numInput(w, (v) => (p.weightKg = weightToKg(v || 0, units))), units.weight),
         );
       };
       draw();
-      return [h("h2", {}, "Height and weight"), h("p", { class: "muted" }, "You can change units any time in Settings."), box];
+      return [h("h2", {}, t("bodyTitle")), h("p", { class: "muted" }, t("bodyDesc")), box];
     },
   });
 
   steps.push({
     render: () => [
-      h("h2", {}, "How active are you?"),
-      h("p", { class: "muted" }, "Count exercise, sports and how much you move during the day."),
+      h("h2", {}, t("activityTitle")),
+      h("p", { class: "muted" }, t("activityDesc")),
       choiceCards<Activity>(
-        (Object.keys(ACTIVITY) as Activity[]).map((k) => ({ value: k, title: ACTIVITY[k].label, desc: ACTIVITY[k].desc })),
+        ACTIVITIES.map((k) => ({ value: k, title: activityLabel(k), desc: activityDesc(k) })),
         p.activity,
         (v) => (p.activity = v),
       ),
@@ -180,12 +196,12 @@ export function runOnboarding(opts: {
       const chk = goalAllowed(p, p.goal);
       if (!chk.allowed) return chk.reason!;
       if (p.goalWeightKg) {
-        if (p.goal === "lose" && p.goalWeightKg >= p.weightKg) return "Your goal weight should be below your current weight.";
-        if (p.goal === "gain" && p.goalWeightKg <= p.weightKg) return "Your goal weight should be above your current weight.";
+        if (p.goal === "lose" && p.goalWeightKg >= p.weightKg) return t("goalBelow");
+        if (p.goal === "gain" && p.goalWeightKg <= p.weightKg) return t("goalAbove");
         const gb = bmi({ heightCm: p.heightCm, weightKg: p.goalWeightKg });
         if (p.goal === "lose" && gb < 18.5) {
           const minKg = 18.5 * (p.heightCm / 100) ** 2;
-          return `That goal is underweight for your height. Pick ${fmtWeight(minKg, units)} or more.`;
+          return t("goalUnderweight", { min: fmtWeight(minKg, units) });
         }
       }
       return null;
@@ -198,31 +214,31 @@ export function runOnboarding(opts: {
           extra.replaceChildren();
           return;
         }
-        if (!paces.some((x) => x.kg === p.paceKgPerWeek)) p.paceKgPerWeek = paces.find((x) => x.label.includes("recommended"))!.kg;
+        if (!paces.some((x) => x.kg === p.paceKgPerWeek)) p.paceKgPerWeek = paces.find((x) => x.recommended)!.kg;
         const gw = p.goalWeightKg ? Math.round(weightValue(p.goalWeightKg, units) * 10) / 10 : undefined;
         extra.replaceChildren(
           h(
             "div",
             { class: "field" },
-            h("span", {}, "Pace per week"),
+            h("span", {}, t("pacePerWeek")),
             segmented(
-              paces.map((x) => ({ value: String(x.kg), label: `${units.weight === "kg" ? x.kg : Math.round((x.kg / KG_PER_LB) * 10) / 10} ${units.weight}` })),
+              paces.map((x) => ({ value: String(x.kg), label: `${fmtNum(units.weight === "kg" ? x.kg : Math.round((x.kg / KG_PER_LB) * 10) / 10, units.weight === "kg" ? 2 : 1).replace(/[.,]?0+$/, "")} ${units.weight}` })),
               String(p.paceKgPerWeek),
               (v) => (p.paceKgPerWeek = Number(v)),
-              "Pace",
+              t("pacePerWeek"),
             ),
-            h("small", { class: "muted" }, paces.map((x) => `${units.weight === "kg" ? x.kg : Math.round((x.kg / KG_PER_LB) * 10) / 10}: ${x.label}`).join(" · ")),
+            h("small", { class: "muted" }, paces.map((x) => `${fmtNum(units.weight === "kg" ? x.kg : Math.round((x.kg / KG_PER_LB) * 10) / 10, units.weight === "kg" ? 2 : 1).replace(/[.,]?0+$/, "")}: ${x.label}`).join(" · ")),
           ),
-          field("Goal weight (optional)", numInput(gw, (v) => (p.goalWeightKg = v ? weightToKg(v, units) : undefined)), units.weight),
+          field(t("goalWeightOptional"), numInput(gw, (v) => (p.goalWeightKg = v ? weightToKg(v, units) : undefined)), units.weight),
         );
       };
       drawExtra();
       return [
-        h("h2", {}, "What's your goal?"),
+        h("h2", {}, t("goalTitle")),
         choiceCards<Goal>(
-          (Object.keys(GOALS) as Goal[]).map((k) => {
+          GOALS.map((k) => {
             const chk = goalAllowed(p, k);
-            return { value: k, title: GOALS[k].label, desc: GOALS[k].desc, emoji: GOALS[k].emoji, disabled: chk.allowed ? undefined : chk.reason };
+            return { value: k, title: goalLabel(k), desc: goalDesc(k), emoji: GOAL_EMOJI[k], disabled: chk.allowed ? undefined : chk.reason };
           }),
           p.goal,
           (v) => {
@@ -237,61 +253,61 @@ export function runOnboarding(opts: {
   });
 
   steps.push({
-    nextLabel: "Looks good",
+    nextLabel: () => t("looksGood"),
     render: () => {
       const plan = makePlan(p);
-      const t = plan.targets;
+      const tg = plan.targets;
       const eta = goalEta(p);
       const B = bmi(p);
       return [
-        h("h2", {}, `Your plan, ${p.name.trim()}`),
+        h("h2", {}, t("planTitle", { name: p.name.trim() })),
         h(
           "div",
           { class: "plan-hero" },
-          h("div", { class: "plan-kcal" }, fmtEnergy(t.calories, units, false)),
-          h("div", { class: "muted" }, `${units.energy} per day · ${GOALS[p.goal].label.toLowerCase()}`),
+          h("div", { class: "plan-kcal" }, fmtEnergy(tg.calories, units, false)),
+          h("div", { class: "muted" }, t("perDayGoal", { unit: units.energy, goal: goalLabel(p.goal).toLowerCase() })),
         ),
         h(
           "div",
           { class: "plan-grid" },
-          tile("Protein", `${t.protein} g`, "protein"),
-          tile("Carbs", `${t.carbs} g`, "carbs"),
-          tile("Fat", `${t.fat} g`, "fat"),
-          tile("Fiber", `${t.fiber} g`),
-          tile("Water", fmtWater(t.waterMl, units)),
-          p.age >= 18 ? tile("BMI", B.toFixed(1)) : tile("Maintenance", fmtEnergy(plan.tdee, units)),
+          tile(t("protein"), `${tg.protein} g`, "protein"),
+          tile(t("carbs"), `${tg.carbs} g`, "carbs"),
+          tile(t("fat"), `${tg.fat} g`, "fat"),
+          tile(t("fiber"), `${tg.fiber} g`),
+          tile(t("water"), fmtWater(tg.waterMl, units)),
+          p.age >= 18 ? tile(t("bmi"), fmtNum(B, 1)) : tile(t("maintenance"), fmtEnergy(plan.tdee, units)),
         ),
-        eta ? h("p", { class: "plan-eta" }, `📅 At this pace you could reach ${fmtWeight(p.goalWeightKg!, units)} around ${eta.toLocaleDateString(undefined, { month: "long", year: "numeric" })}.`) : null,
+        eta ? h("p", { class: "plan-eta" }, t("eta", { weight: fmtWeight(p.goalWeightKg!, units), date: eta.toLocaleDateString(locale(), { month: "long", year: "numeric" }) })) : null,
         ...plan.notes.map((n) => h("p", { class: "plan-note" }, "⚠️ ", n)),
         h(
           "details",
           { class: "why" },
-          h("summary", {}, "How these numbers were worked out"),
+          h("summary", {}, t("howNumbers")),
           ...plan.why.map((w) => h("div", { class: "why-item" }, h("strong", {}, w.title), h("p", {}, w.text))),
-          h("p", { class: "muted small" }, "These are estimates for healthy adults and teens, not medical advice. If you're pregnant, breastfeeding, have a health condition or a history of disordered eating, check with a doctor first."),
+          h("p", { class: "muted small" }, t("planDisclaimer")),
         ),
-        h("p", { class: "muted small" }, "You can change any target later in Settings."),
+        h("p", { class: "muted small" }, t("changeLater")),
       ];
     },
   });
 
   steps.push({
-    nextLabel: opts.firstRun ? "Start tracking" : "Save",
+    nextLabel: () => opts.firstRun ? t("startTracking") : t("save"),
     render: () => {
       const input = h("input", { type: "password", value: apiKey, placeholder: "AIza...", autocomplete: "off" });
       input.addEventListener("input", () => (apiKey = input.value.trim()));
       return [
-        h("h2", {}, "Turn on the free AI"),
-        h("p", { class: "muted" }, "The AI that reads your food photos is Google Gemini. It's free; you just need your own key."),
+        h("h2", {}, t("keyTitle")),
+        h("p", { class: "muted" }, t("keyDesc")),
         h(
           "ol",
           { class: "ob-steps" },
-          h("li", {}, "Open ", h("a", { href: "https://aistudio.google.com/apikey", target: "_blank", rel: "noopener" }, "aistudio.google.com/apikey"), " and sign in with a Google account."),
-          h("li", {}, "Tap ", h("strong", {}, "Create API key"), " and copy it."),
-          h("li", {}, "Paste it here."),
+          h("li", {}, `${t("keyStep1a")} `, h("a", { href: "https://aistudio.google.com/apikey", target: "_blank", rel: "noopener" }, "aistudio.google.com/apikey"), ` ${t("keyStep1b")}`),
+          h("li", {}, `${t("keyStep2a")} `, h("strong", {}, t("keyStep2b")), ` ${t("keyStep2c")}`),
+          h("li", {}, t("keyStep3")),
         ),
-        field("Google AI key", input),
-        h("p", { class: "muted small" }, "🔒 Your key is saved only on this phone and only sent to Google. No credit card needed. You can skip this and add it later in Settings."),
+        field(t("aiKey"), input),
+        h("p", { class: "muted small" }, t("keyPrivacy")),
       ];
     },
   });
@@ -302,7 +318,7 @@ export function runOnboarding(opts: {
     const st = steps[i];
     body.replaceChildren(...st.render().filter((n): n is Node => n !== null));
     body.scrollTop = 0;
-    next.textContent = st.nextLabel ?? "Next";
+    next.textContent = st.nextLabel?.() ?? t("next");
     back.style.visibility = i === 0 ? "hidden" : "visible";
     dots.replaceChildren(...steps.map((_, j) => h("span", { class: j === i ? "dot on" : j < i ? "dot done" : "dot" })));
   }

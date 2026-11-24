@@ -1,21 +1,16 @@
 // Evidence-based target calculations. All inputs are metric; the UI converts units.
+import { locale, t, type StringKey } from "./i18n";
 import type { Activity, Goal, Profile, Targets, Units } from "./store";
 
-export const ACTIVITY: Record<Activity, { label: string; desc: string; factor: number }> = {
-  sedentary: { label: "Mostly sitting", desc: "Desk job or school, little exercise", factor: 1.2 },
-  light: { label: "Lightly active", desc: "Walks or light exercise 1–3 days a week", factor: 1.375 },
-  moderate: { label: "Moderately active", desc: "Exercise or sports 3–5 days a week", factor: 1.55 },
-  active: { label: "Very active", desc: "Hard exercise 6–7 days a week", factor: 1.725 },
-  very: { label: "Athlete", desc: "Training twice a day or a physical job", factor: 1.9 },
-};
+export const ACTIVITY_FACTOR: Record<Activity, number> = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very: 1.9 };
+export const ACTIVITIES = Object.keys(ACTIVITY_FACTOR) as Activity[];
+export const activityLabel = (a: Activity) => t(`act_${a}` as StringKey);
+export const activityDesc = (a: Activity) => t(`act_${a}_d` as StringKey);
 
-export const GOALS: Record<Goal, { label: string; emoji: string; desc: string }> = {
-  lose: { label: "Lose weight", emoji: "📉", desc: "A steady, sustainable calorie deficit" },
-  maintain: { label: "Keep my weight stable", emoji: "⚖️", desc: "Eat about what your body uses" },
-  muscle: { label: "Build muscle", emoji: "💪", desc: "Small surplus with plenty of protein" },
-  gain: { label: "Gain weight", emoji: "📈", desc: "A steady calorie surplus" },
-  healthy: { label: "Just eat healthier", emoji: "🥗", desc: "Maintenance calories, focus on quality" },
-};
+export const GOAL_EMOJI: Record<Goal, string> = { lose: "📉", maintain: "⚖️", muscle: "💪", gain: "📈", healthy: "🥗" };
+export const GOALS = Object.keys(GOAL_EMOJI) as Goal[];
+export const goalLabel = (g: Goal) => t(`goal_${g}` as StringKey);
+export const goalDesc = (g: Goal) => t(`goal_${g}_d` as StringKey);
 
 const KCAL_PER_KG = 7700; // approx. energy in 1 kg of body weight change
 
@@ -32,7 +27,7 @@ export function bmr(p: Profile): number {
 }
 
 export function tdee(p: Profile): number {
-  return bmr(p) * ACTIVITY[p.activity].factor;
+  return bmr(p) * ACTIVITY_FACTOR[p.activity];
 }
 
 export interface GoalCheck {
@@ -43,28 +38,24 @@ export interface GoalCheck {
 /** Safety rules for which goals the app will plan for. */
 export function goalAllowed(p: Pick<Profile, "age" | "heightCm" | "weightKg">, goal: Goal): GoalCheck {
   if (goal === "lose") {
-    if (p.age < 18) {
-      return { allowed: false, reason: "Under 18, your body is still growing, so the app won't plan a calorie deficit. Talk to a doctor if you're worried about your weight." };
-    }
-    if (bmi(p) < 18.5) {
-      return { allowed: false, reason: "Your weight is already in the underweight range for your height, so the app won't plan weight loss." };
-    }
+    if (p.age < 18) return { allowed: false, reason: t("teenNoDeficit") };
+    if (bmi(p) < 18.5) return { allowed: false, reason: t("underweightNoLoss") };
   }
   return { allowed: true };
 }
 
-export function paceOptions(goal: Goal): { kg: number; label: string }[] {
+export function paceOptions(goal: Goal): { kg: number; label: string; recommended: boolean }[] {
   if (goal === "lose") {
     return [
-      { kg: 0.25, label: "Relaxed" },
-      { kg: 0.5, label: "Steady (recommended)" },
-      { kg: 0.75, label: "Faster" },
+      { kg: 0.25, label: t("pace_relaxed"), recommended: false },
+      { kg: 0.5, label: t("pace_steady"), recommended: true },
+      { kg: 0.75, label: t("pace_faster"), recommended: false },
     ];
   }
   if (goal === "gain") {
     return [
-      { kg: 0.25, label: "Lean (recommended)" },
-      { kg: 0.5, label: "Faster" },
+      { kg: 0.25, label: t("pace_lean"), recommended: true },
+      { kg: 0.5, label: t("pace_faster"), recommended: false },
     ];
   }
   return [];
@@ -106,7 +97,7 @@ export function makePlan(p: Profile): Plan {
   const floor = p.sex === "male" ? 1500 : p.sex === "female" ? 1200 : 1350;
   if (goal === "lose" && calories < Math.max(floor, B)) {
     calories = Math.max(floor, B);
-    notes.push("Your calorie target was raised to a safe minimum, so weight loss may be slower than the pace you picked.");
+    notes.push(t("noteRaised"));
   }
   calories = Math.round(calories / 10) * 10;
 
@@ -121,64 +112,38 @@ export function makePlan(p: Profile): Plan {
   const fiber = Math.round((calories / 1000) * 14);
   const waterMl = Math.round(Math.min(4000, Math.max(1500, p.weightKg * 35)) / 50) * 50;
 
-  if (p.age < 18) {
-    notes.push("Teens need enough energy to grow. Treat these numbers as a rough guide, not a limit.");
-  }
+  if (p.age < 18) notes.push(t("noteTeen"));
 
+  const n = (x: number) => Math.round(x).toLocaleString(locale());
   const why = [
-    {
-      title: "Calories your body uses",
-      text: `Your resting burn is about ${Math.round(B)} kcal (Mifflin-St Jeor equation, the formula dietitians use most). Multiplied by your activity level that's about ${Math.round(T)} kcal a day to keep your weight stable.`,
-    },
-    {
-      title: "Your goal",
-      text:
-        adj < 0
-          ? `About ${Math.round(-adj)} kcal less per day. Roughly 7,700 kcal equals 1 kg of body weight, and health guidelines (CDC) recommend losing about 0.5–1 kg (1–2 lb) a week at most.`
-          : adj > 0
-            ? `About ${Math.round(adj)} kcal more per day. A small surplus helps add muscle while limiting fat gain.`
-            : "Calories match what you burn, so your weight should stay about the same.",
-    },
-    {
-      title: "Protein",
-      text: `${perKg} g per kg of body weight. Research (International Society of Sports Nutrition) suggests 1.4–2.0 g/kg for active people; higher amounts help keep muscle while losing weight.`,
-    },
-    {
-      title: "Fat, carbs and fiber",
-      text: `Fat is ${Math.round(fatPct * 100)}% of calories (guidelines say 20–35%), carbs fill the rest for energy, and fiber is 14 g per 1,000 kcal (Dietary Guidelines for Americans).`,
-    },
-    {
-      title: "Water",
-      text: "About 35 ml per kg of body weight from drinks. Food adds more on top. Drink more when it's hot or you exercise.",
-    },
+    { title: t("why1t"), text: t("why1", { bmr: n(B), tdee: n(T) }) },
+    { title: t("why2t"), text: adj < 0 ? t("why2minus", { n: n(-adj) }) : adj > 0 ? t("why2plus", { n: n(adj) }) : t("why2zero") },
+    { title: t("why3t"), text: t("why3", { g: perKg.toLocaleString(locale()) }) },
+    { title: t("why4t"), text: t("why4", { pct: Math.round(fatPct * 100) }) },
+    { title: t("why5t"), text: t("why5") },
   ];
 
-  return {
-    targets: { calories, protein, carbs, fat, fiber, waterMl },
-    bmr: B,
-    tdee: T,
-    adjustment: adj,
-    notes,
-    why,
-  };
+  return { targets: { calories, protein, carbs, fat, fiber, waterMl }, bmr: B, tdee: T, adjustment: adj, notes, why };
 }
 
 /** Estimated date to reach the goal weight at the planned pace, or null. */
 export function goalEta(p: Profile, from = new Date()): Date | null {
   if (!p.goalWeightKg || !p.paceKgPerWeek) return null;
+  if (p.goal !== "lose" && p.goal !== "gain") return null;
   const diff = p.goalWeightKg - p.weightKg;
   if ((p.goal === "lose" && diff >= 0) || (p.goal === "gain" && diff <= 0)) return null;
-  if (p.goal !== "lose" && p.goal !== "gain") return null;
   const weeks = Math.abs(diff) / p.paceKgPerWeek;
   return new Date(from.getTime() + weeks * 7 * 86400000);
 }
 
-// ---------- unit formatting ----------
+// ---------- unit formatting (numbers follow the app language) ----------
 export const KG_PER_LB = 0.45359237;
 export const ML_PER_FLOZ = 29.5735;
 
+const num = (v: number, digits = 0) => v.toLocaleString(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
 export function fmtWeight(kg: number, u: Units, digits = 1): string {
-  return u.weight === "kg" ? `${kg.toFixed(digits)} kg` : `${(kg / KG_PER_LB).toFixed(digits)} lb`;
+  return u.weight === "kg" ? `${num(kg, digits)} kg` : `${num(kg / KG_PER_LB, digits)} lb`;
 }
 export function weightValue(kg: number, u: Units): number {
   return u.weight === "kg" ? kg : kg / KG_PER_LB;
@@ -195,9 +160,12 @@ export function energyValue(kcal: number, u: Units): number {
   return u.energy === "kcal" ? kcal : kcal * 4.184;
 }
 export function fmtEnergy(kcal: number, u: Units, withUnit = true): string {
-  const v = Math.round(energyValue(kcal, u));
-  return withUnit ? `${v.toLocaleString()} ${u.energy}` : v.toLocaleString();
+  const v = num(Math.round(energyValue(kcal, u)));
+  return withUnit ? `${v} ${u.energy}` : v;
 }
 export function fmtWater(ml: number, u: Units): string {
-  return u.water === "ml" ? (ml >= 1000 ? `${(ml / 1000).toFixed(1)} L` : `${Math.round(ml)} ml`) : `${Math.round(ml / ML_PER_FLOZ)} fl oz`;
+  return u.water === "ml" ? (ml >= 1000 ? `${num(ml / 1000, 1)} L` : `${Math.round(ml)} ml`) : `${Math.round(ml / ML_PER_FLOZ)} fl oz`;
+}
+export function fmtNum(v: number, digits = 0): string {
+  return num(v, digits);
 }

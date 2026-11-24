@@ -3,7 +3,8 @@ import { analyzeMeal, AnalysisError, type Analysis, type FoodItem } from "./ai";
 import { LookupError, lookupBarcode, startScanner, type ScanControls } from "./barcode";
 import { prepareImage } from "./image";
 import { motivation } from "./motivation";
-import { ACTIVITY, GOALS, energyValue, fmtEnergy, fmtHeight, fmtWater, fmtWeight, makePlan, weightToKg, weightValue } from "./nutrition";
+import { LANGUAGES, celebrateLines, detectLanguage, getLanguage, locale, setLanguage, t, type StringKey } from "./i18n";
+import { GOAL_EMOJI, activityLabel, energyValue, fmtEnergy, fmtHeight, fmtWater, fmtWeight, goalLabel, makePlan, weightToKg, weightValue } from "./nutrition";
 import { runOnboarding, type OnboardingResult } from "./onboarding";
 import { currentStreak, renderStats, type Range } from "./stats";
 import {
@@ -34,10 +35,11 @@ import {
 import { $, download, h, segmented, toast, toggle } from "./ui";
 
 const MEALS: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
-const MEAL_LABEL: Record<MealType, string> = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
+const mealLabel = (m: MealType) => t(m === "snack" ? "snacks" : m);
 const ACCENTS: Settings["accent"][] = ["green", "blue", "purple", "pink", "orange", "teal"];
 
 let settings = loadSettings();
+setLanguage(settings.language ?? detectLanguage());
 let viewDate = localDate();
 let tab: "today" | "stats" | "settings" = "today";
 let statsRange: Range = "week";
@@ -93,15 +95,15 @@ function render() {
 // ======================= today =======================
 function dayLabel(date: string): string {
   const today = localDate();
-  if (date === today) return "Today";
-  if (date === addDays(today, -1)) return "Yesterday";
-  return parseDate(date).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  if (date === today) return t("today");
+  if (date === addDays(today, -1)) return t("yesterday");
+  return parseDate(date).toLocaleDateString(locale(), { weekday: "short", month: "short", day: "numeric" });
 }
 
 function renderToday() {
   const root = $("view-today");
   const u = U();
-  const t = settings.targets;
+  const tg = settings.targets;
   const isToday = viewDate === localDate();
   const entries = entriesFor(viewDate);
   const totals = sum(entries.flatMap((e) => e.items));
@@ -111,9 +113,9 @@ function renderToday() {
   const header = h(
     "header",
     { class: "topbar" },
-    h("button", { class: "icon-btn", "aria-label": "Previous day", onclick: () => { viewDate = addDays(viewDate, -1); render(); } }, "‹"),
+    h("button", { class: "icon-btn", "aria-label": t("prevDay"), onclick: () => { viewDate = addDays(viewDate, -1); render(); } }, "‹"),
     h("button", { class: "day-label", onclick: () => { viewDate = localDate(); render(); } }, dayLabel(viewDate)),
-    h("button", { class: "icon-btn", "aria-label": "Next day", disabled: isToday, onclick: () => { if (!isToday) { viewDate = addDays(viewDate, 1); render(); } } }, "›"),
+    h("button", { class: "icon-btn", "aria-label": t("nextDay"), disabled: isToday, onclick: () => { if (!isToday) { viewDate = addDays(viewDate, 1); render(); } } }, "›"),
   );
 
   // --- motivation ---
@@ -125,11 +127,11 @@ function renderToday() {
         goal: settings.profile.goal,
         hour: new Date().getHours(),
         eaten: totals.calories,
-        target: t.calories,
+        target: tg.calories,
         protein: totals.protein_g,
-        proteinTarget: t.protein,
+        proteinTarget: tg.protein,
         waterMl,
-        waterTarget: settings.showWater ? t.waterMl : 0,
+        waterTarget: settings.showWater ? tg.waterMl : 0,
         streak: currentStreak(),
         entriesToday: entries.length,
         isToday,
@@ -140,15 +142,15 @@ function renderToday() {
     );
     moti = h(
       "button",
-      { class: "card motivation", "aria-label": `${m.text} Tap for another message.`, onclick: () => { motivationSeed++; render(); } },
+      { class: "card motivation", "aria-label": t("motiAria", { text: m.text }), onclick: () => { motivationSeed++; render(); } },
       h("span", { class: "moti-emoji", "aria-hidden": "true" }, m.emoji),
       h("span", { class: "moti-text" }, m.text),
     );
   }
 
   // --- summary ring + macros ---
-  const left = t.calories - totals.calories;
-  const frac = Math.min(totals.calories / (t.calories || 1), 1);
+  const left = tg.calories - totals.calories;
+  const frac = Math.min(totals.calories / (tg.calories || 1), 1);
   const C = 2 * Math.PI * 52;
   const ringSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   ringSvg.setAttribute("viewBox", "0 0 120 120");
@@ -169,22 +171,22 @@ function renderToday() {
       "div",
       { class: "ring-wrap" },
       ringSvg,
-      h("div", { class: "ring-text" }, h("div", { class: fmtEnergy(Math.abs(left), u, false).length > 5 ? "ring-num long" : "ring-num" }, fmtEnergy(Math.abs(left), u, false)), h("div", { class: "ring-sub" }, `${u.energy} ${left < 0 ? "over" : "left"}`)),
+      h("div", { class: "ring-text" }, h("div", { class: fmtEnergy(Math.abs(left), u, false).length > 5 ? "ring-num long" : "ring-num" }, fmtEnergy(Math.abs(left), u, false)), h("div", { class: "ring-sub" }, `${u.energy} ${left < 0 ? t("over") : t("left")}`)),
     ),
     h(
       "div",
       { class: "summary-side" },
-      h("div", { class: "eaten" }, `${fmtEnergy(totals.calories, u, false)} / ${fmtEnergy(t.calories, u)}`),
-      macro("Protein", "protein", totals.protein_g, t.protein),
-      macro("Carbs", "carbs", totals.carbs_g, t.carbs),
-      macro("Fat", "fat", totals.fat_g, t.fat),
+      h("div", { class: "eaten" }, `${fmtEnergy(totals.calories, u, false)} / ${fmtEnergy(tg.calories, u)}`),
+      macro(t("protein"), "protein", totals.protein_g, tg.protein),
+      macro(t("carbs"), "carbs", totals.carbs_g, tg.carbs),
+      macro(t("fat"), "fat", totals.fat_g, tg.fat),
     ),
   );
 
   // --- add food ---
-  const textInput = h("input", { id: "text-input", type: "text", placeholder: "e.g. 2 eggs, toast with butter, coffee", autocomplete: "off", enterkeyhint: "go", value: draftText, "aria-label": "Describe what you ate" });
+  const textInput = h("input", { id: "text-input", type: "text", placeholder: t("describePlaceholder"), autocomplete: "off", enterkeyhint: "go", value: draftText, "aria-label": t("describeAria") });
   textInput.addEventListener("input", () => (draftText = textInput.value));
-  const form = h("form", { class: "text-form" }, textInput, h("button", { type: "submit", class: "btn primary" }, "Analyze"));
+  const form = h("form", { class: "text-form" }, textInput, h("button", { type: "submit", class: "btn primary" }, t("analyze")));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = textInput.value.trim();
@@ -196,15 +198,15 @@ function renderToday() {
   const add = h(
     "section",
     { class: "card add", "aria-label": "Add food" },
-    h("label", { class: "snap-btn", for: "photo-input" }, h("span", { class: "cam", "aria-hidden": "true" }, "📷"), h("span", {}, "Snap or pick a food photo")),
-    h("button", { type: "button", class: "scan-btn", onclick: openScanner }, h("span", { class: "barcode-icon", "aria-hidden": "true" }), h("span", {}, "Scan a barcode")),
-    h("div", { class: "or" }, "or describe it"),
+    h("label", { class: "snap-btn", for: "photo-input" }, h("span", { class: "cam", "aria-hidden": "true" }, "📷"), h("span", {}, t("snapPhoto"))),
+    h("button", { type: "button", class: "scan-btn", onclick: openScanner }, h("span", { class: "barcode-icon", "aria-hidden": "true" }), h("span", {}, t("scanBarcode"))),
+    h("div", { class: "or" }, t("orDescribe")),
     form,
     recents.length
       ? h(
           "div",
           { class: "recents" },
-          h("div", { class: "muted small recents-title" }, "Log again (no AI needed)"),
+          h("div", { class: "muted small recents-title" }, t("logAgainNoAi")),
           h("div", { class: "chips" }, ...recents.map((e) => h("button", { class: "chip", onclick: () => reLog(e) }, e.thumb ? h("img", { src: e.thumb, alt: "" }) : null, h("span", {}, e.name)))),
         )
       : null,
@@ -214,38 +216,38 @@ function renderToday() {
   let waterCard: HTMLElement | null = null;
   if (settings.showWater) {
     const glasses = Math.round(waterMl / settings.glassMl);
-    const goalGlasses = Math.max(1, Math.round(t.waterMl / settings.glassMl));
+    const goalGlasses = Math.max(1, Math.round(tg.waterMl / settings.glassMl));
     waterCard = h(
       "section",
       { class: "card water" },
-      h("div", { class: "card-head" }, h("h3", {}, "💧 Water"), h("span", { class: "muted" }, `${fmtWater(waterMl, u)} / ${fmtWater(t.waterMl, u)}`)),
+      h("div", { class: "card-head" }, h("h3", {}, t("waterTitle")), h("span", { class: "muted" }, `${fmtWater(waterMl, u)} / ${fmtWater(tg.waterMl, u)}`)),
       h(
         "div",
         { class: "water-row" },
-        h("button", { class: "round-btn", "aria-label": "Remove a glass", onclick: () => { setWater(viewDate, waterMl - settings.glassMl); render(); } }, "−"),
-        h("div", { class: "glasses", role: "img", "aria-label": `${glasses} of ${goalGlasses} glasses` }, ...Array.from({ length: Math.min(16, Math.max(goalGlasses, glasses)) }, (_, i) => h("span", { class: i < glasses ? "glass full" : "glass" }))),
+        h("button", { class: "round-btn", "aria-label": t("removeGlass"), onclick: () => { setWater(viewDate, waterMl - settings.glassMl); render(); } }, "−"),
+        h("div", { class: "glasses", role: "img", "aria-label": t("glassesAria", { n: glasses, m: goalGlasses }) }, ...Array.from({ length: Math.min(16, Math.max(goalGlasses, glasses)) }, (_, i) => h("span", { class: i < glasses ? "glass full" : "glass" }))),
         h(
           "button",
           {
             class: "round-btn primary",
-            "aria-label": "Add a glass",
+            "aria-label": t("addGlass"),
             onclick: () => {
               setWater(viewDate, waterMl + settings.glassMl);
-              if (waterMl + settings.glassMl >= t.waterMl && waterMl < t.waterMl) toast(`💧 Water goal reached${settings.profile ? `, ${settings.profile.name}` : ""}!`);
+              if (waterMl + settings.glassMl >= tg.waterMl && waterMl < tg.waterMl) toast(settings.profile ? t("waterGoalReachedName", { name: settings.profile.name }) : t("waterGoalReached"));
               render();
             },
           },
           "+",
         ),
       ),
-      h("div", { class: "muted small" }, `One glass = ${fmtWater(settings.glassMl, u)}`),
+      h("div", { class: "muted small" }, t("oneGlass", { amount: fmtWater(settings.glassMl, u) })),
     );
   }
 
   // --- log ---
-  const log = h("section", { class: "log", "aria-label": "Food log" });
+  const log = h("section", { class: "log", "aria-label": t("progress") });
   if (!entries.length) {
-    log.append(h("div", { class: "empty" }, isToday ? "Nothing logged yet today. Snap your first meal above." : "Nothing logged this day."));
+    log.append(h("div", { class: "empty" }, isToday ? t("emptyToday") : t("emptyDay")));
   }
   for (const meal of MEALS) {
     const list = entries.filter((e) => e.meal === meal);
@@ -254,7 +256,7 @@ function renderToday() {
       h(
         "div",
         { class: "card meal-group" },
-        h("div", { class: "meal-head" }, h("h3", {}, MEAL_LABEL[meal]), h("span", { class: "muted" }, fmtEnergy(sum(list.flatMap((e) => e.items)).calories, u))),
+        h("div", { class: "meal-head" }, h("h3", {}, mealLabel(meal)), h("span", { class: "muted" }, fmtEnergy(sum(list.flatMap((e) => e.items)).calories, u))),
         ...list.map(renderEntry),
       ),
     );
@@ -267,12 +269,12 @@ function renderToday() {
     add,
     ...(waterCard ? [waterCard] : []),
     log,
-    h("p", { class: "footer-note" }, "Estimates from AI. Use them as a guide, not medical advice."),
+    h("p", { class: "footer-note" }, t("aiDisclaimer")),
   );
 }
 
 function renderEntry(e: Entry) {
-  const t = sum(e.items);
+  const tot = sum(e.items);
   const u = U();
   const details = h(
     "div",
@@ -281,16 +283,16 @@ function renderEntry(e: Entry) {
     h(
       "div",
       { class: "entry-actions" },
-      h("button", { class: "btn small", onclick: () => reLog(e) }, "Log again"),
-      h("button", { class: "btn danger small", onclick: () => { if (confirm(`Delete "${e.name}"?`)) { deleteEntry(e.id); render(); } } }, "Delete"),
+      h("button", { class: "btn small", onclick: () => reLog(e) }, t("logAgain")),
+      h("button", { class: "btn danger small", onclick: () => { if (confirm(t("confirmDeleteEntry", { name: e.name }))) { deleteEntry(e.id); render(); } } }, t("delete")),
     ),
   );
   const row = h(
     "button",
     { class: "entry", "aria-expanded": "false" },
     e.thumb ? h("img", { class: "thumb", src: e.thumb, alt: "" }) : h("div", { class: "thumb placeholder" }, "🍽"),
-    h("div", { class: "entry-main" }, h("div", { class: "entry-name" }, e.name), h("div", { class: "muted small" }, `P ${round(t.protein_g)} · C ${round(t.carbs_g)} · F ${round(t.fat_g)} g`)),
-    h("div", { class: "entry-kcal" }, fmtEnergy(t.calories, u, false)),
+    h("div", { class: "entry-main" }, h("div", { class: "entry-name" }, e.name), h("div", { class: "muted small" }, `P ${round(tot.protein_g)} · C ${round(tot.carbs_g)} · F ${round(tot.fat_g)} g`)),
+    h("div", { class: "entry-kcal" }, fmtEnergy(tot.calories, u, false)),
   );
   row.addEventListener("click", () => {
     const open = row.getAttribute("aria-expanded") === "true";
@@ -309,7 +311,7 @@ const review = $("review") as HTMLDialogElement;
 
 async function runAnalysis(input: { file?: File; text?: string }) {
   if (!settings.apiKey) {
-    toast("Add your free Google AI key in Settings first.", 5000);
+    toast(t("needKey"), 5000);
     setTab("settings");
     return;
   }
@@ -324,20 +326,49 @@ async function runAnalysis(input: { file?: File; text?: string }) {
       preview = p.preview;
     }
   } catch {
-    toast("Couldn't read that photo. Try a different one.");
+    toast(t("badPhoto"));
     return;
   }
-  $("review-body").replaceChildren(
-    h("div", { class: "loading" }, preview ? h("img", { class: "review-photo", src: preview, alt: "" }) : null, h("div", { class: "spinner", "aria-hidden": "true" }), h("p", {}, "Looking at your food…")),
-  );
+  const loader = analyzingView(preview);
+  $("review-body").replaceChildren(loader.el);
   if (!review.open) review.showModal();
   try {
     const result = await analyzeMeal({ apiKey: settings.apiKey, image, text: input.text });
     showReview(result, { thumb, preview });
   } catch (err) {
     review.close();
-    toast(err instanceof AnalysisError ? err.message : "Something went wrong. Try again.", 6000);
+    toast(err instanceof AnalysisError ? err.message : t("somethingWrong"), 8000);
+  } finally {
+    loader.stop();
   }
+}
+
+/** The "AI is looking at your food" animation: scanning beam over the photo (or orbiting food emojis) and changing steps. */
+function analyzingView(preview?: string): { el: HTMLElement; stop: () => void } {
+  const steps: StringKey[] = ["loadFind", "loadPortion", "loadCount", "loadAlmost"];
+  const label = h("p", { class: "an-step in" }, t(steps[0]));
+  const visual = preview
+    ? h("div", { class: "an-photo" }, h("img", { src: preview, alt: "" }), h("div", { class: "an-grid", "aria-hidden": "true" }), h("div", { class: "an-beam", "aria-hidden": "true" }), h("div", { class: "an-sparkle s1" }, "✦"), h("div", { class: "an-sparkle s2" }, "✦"), h("div", { class: "an-sparkle s3" }, "✦"))
+    : h(
+        "div",
+        { class: "an-bowl", "aria-hidden": "true" },
+        h("span", { class: "an-center" }, "🥗"),
+        h("span", { class: "an-orbit o1" }, h("span", {}, "🍎")),
+        h("span", { class: "an-orbit o2" }, h("span", {}, "🥑")),
+        h("span", { class: "an-orbit o3" }, h("span", {}, "🍞")),
+      );
+  const dots = h("span", { class: "an-dots", "aria-hidden": "true" }, h("i"), h("i"), h("i"));
+  let i = 0;
+  const timer = window.setInterval(() => {
+    if (i >= steps.length - 1) return;
+    i++;
+    label.classList.remove("in");
+    void label.offsetWidth; // restart the fade-in
+    label.textContent = t(steps[i]);
+    label.classList.add("in");
+  }, 1900);
+  const el = h("div", { class: "loading analyzing", role: "status", "aria-live": "polite" }, visual, label, dots, h("div", { class: "an-progress" }, h("div", { class: "an-progress-fill" })));
+  return { el, stop: () => clearInterval(timer) };
 }
 
 function showReview(result: Analysis, opt: { thumb?: string; preview?: string; noBadge?: boolean }) {
@@ -345,7 +376,7 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
   const items: FoodItem[] = result.items.map((i) => ({ ...i }));
   let servings = 1;
   let meal: MealType = viewDate === localDate() ? guessMeal() : "snack";
-  const nameInput = h("input", { class: "title-input", value: result.meal_name, "aria-label": "Meal name" });
+  const nameInput = h("input", { class: "title-input", value: result.meal_name, "aria-label": t("mealName") });
   const itemsBox = h("div", { class: "review-items" });
   const totalsBox = h("div", { class: "review-totals" });
   const servingsLabel = h("span", { class: "serv-val" }, "1×");
@@ -360,13 +391,13 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
     sugar_g: i.sugar_g * servings,
   });
 
-  const addBtn = h("button", { class: "btn primary" }, "Add to log");
+  const addBtn = h("button", { class: "btn primary" }, t("addToLog"));
 
   function update() {
     servingsLabel.textContent = `${servings}×`;
     itemsBox.replaceChildren(
       ...items.map((item, idx) => {
-        const kcal = h("input", { class: "kcal-input", type: "number", inputmode: "numeric", value: String(round(energyValue(item.calories, u))), "aria-label": `${u.energy} for ${item.name}` });
+        const kcal = h("input", { class: "kcal-input", type: "number", inputmode: "numeric", value: String(round(energyValue(item.calories, u))), "aria-label": t("energyFor", { unit: u.energy, item: item.name }) });
         kcal.addEventListener("change", () => {
           const shown = Math.max(0, Number(kcal.value) || 0);
           const v = u.energy === "kJ" ? shown / 4.184 : shown;
@@ -380,15 +411,15 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
           { class: "review-item" },
           h("div", { class: "ri-main" }, h("div", { class: "ri-name" }, item.name), h("div", { class: "muted small" }, `${item.portion} · P ${fmt1(item.protein_g)} · C ${fmt1(item.carbs_g)} · F ${fmt1(item.fat_g)}`)),
           kcal,
-          h("button", { class: "icon-btn remove", "aria-label": `Remove ${item.name}`, onclick: () => { items.splice(idx, 1); update(); } }, "×"),
+          h("button", { class: "icon-btn remove", "aria-label": t("removeItem", { item: item.name }), onclick: () => { items.splice(idx, 1); update(); } }, "×"),
         );
       }),
     );
-    if (!items.length) itemsBox.append(h("p", { class: "muted" }, "No food items. Cancel and try another photo or description."));
-    const t = sum(items.map(scaled));
+    if (!items.length) itemsBox.append(h("p", { class: "muted" }, t("noItems")));
+    const tot = sum(items.map(scaled));
     totalsBox.replaceChildren(
-      h("div", { class: "tot-kcal" }, fmtEnergy(t.calories, u, false), h("small", {}, ` ${u.energy}`)),
-      h("div", { class: "tot-macros" }, `Protein ${round(t.protein_g)} g · Carbs ${round(t.carbs_g)} g · Fat ${round(t.fat_g)} g`),
+      h("div", { class: "tot-kcal" }, fmtEnergy(tot.calories, u, false), h("small", {}, ` ${u.energy}`)),
+      h("div", { class: "tot-macros" }, t("totalsLine", { p: round(tot.protein_g), c: round(tot.carbs_g), f: round(tot.fat_g) })),
     );
     addBtn.disabled = !items.length;
   }
@@ -406,24 +437,24 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
   const parts: (Node | null)[] = [
     opt.preview ? h("img", { class: "review-photo", src: opt.preview, alt: "" }) : null,
     nameInput,
-    opt.noBadge ? null : h("span", { class: `badge ${result.confidence}` }, `${result.confidence} confidence`),
+    opt.noBadge ? null : h("span", { class: `badge ${result.confidence}` }, t(`conf_${result.confidence}` as StringKey)),
     result.notes ? h("p", { class: "notes" }, result.notes) : null,
     itemsBox,
     h(
       "div",
       { class: "servings" },
-      h("span", {}, "Servings"),
+      h("span", {}, t("servings")),
       h(
         "div",
         { class: "stepper" },
-        h("button", { class: "icon-btn", "aria-label": "Fewer servings", onclick: () => { servings = Math.max(0.25, servings - 0.25); update(); } }, "−"),
+        h("button", { class: "icon-btn", "aria-label": t("fewerServings"), onclick: () => { servings = Math.max(0.25, servings - 0.25); update(); } }, "−"),
         servingsLabel,
-        h("button", { class: "icon-btn", "aria-label": "More servings", onclick: () => { servings += 0.25; update(); } }, "+"),
+        h("button", { class: "icon-btn", "aria-label": t("moreServings"), onclick: () => { servings += 0.25; update(); } }, "+"),
       ),
     ),
     totalsBox,
-    segmented<MealType>(MEALS.map((m) => ({ value: m, label: MEAL_LABEL[m].replace("Snacks", "Snack") })), meal, (v) => (meal = v), "Meal"),
-    h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", onclick: () => review.close() }, "Cancel"), addBtn),
+    segmented<MealType>(MEALS.map((m) => ({ value: m, label: m === "snack" ? t("snack") : mealLabel(m) })), meal, (v) => (meal = v), t("meal")),
+    h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", onclick: () => review.close() }, t("cancel")), addBtn),
   ];
   $("review-body").replaceChildren(...parts.filter((p): p is Node => p !== null));
   update();
@@ -432,10 +463,8 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
 
 function celebrate(): string {
   const name = settings.profile?.name;
-  const plain = ["Added to your log ✅", "Logged! Nice one 👍", "Got it! 📒", "Saved to your day ✨"];
-  const named = ["Nice one, {n}! 👍", "Logged, {n}! ✅", "Keep it up, {n}! 💪", "Great job tracking, {n}! ✨"];
-  const pool = name ? [...plain, ...named] : plain;
-  return pool[Math.floor(Math.random() * pool.length)].replace("{n}", name ?? "");
+  const lines = celebrateLines(!!name);
+  return lines[Math.floor(Math.random() * lines.length)].replace("{name}", name ?? "");
 }
 
 // ======================= barcode scanner =======================
@@ -451,46 +480,46 @@ scanner.addEventListener("close", stopScanner);
 function openScanner() {
   const video = h("video", { class: "scan-video", playsinline: "", muted: "", autoplay: "" });
   video.muted = true;
-  const status = h("p", { class: "scan-status muted small" }, "Starting camera…");
-  const codeInput = h("input", { type: "text", inputmode: "numeric", placeholder: "Or type the numbers under the barcode", autocomplete: "off", "aria-label": "Barcode number" });
-  const form = h("form", { class: "text-form" }, codeInput, h("button", { type: "submit", class: "btn primary" }, "Look up"));
+  const status = h("p", { class: "scan-status muted small" }, t("startingCamera"));
+  const codeInput = h("input", { type: "text", inputmode: "numeric", placeholder: t("typeBarcode"), autocomplete: "off", "aria-label": t("barcodeNumber") });
+  const form = h("form", { class: "text-form" }, codeInput, h("button", { type: "submit", class: "btn primary" }, t("lookUp")));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     if (codeInput.value.trim()) handleCode(codeInput.value.trim());
   });
   const viewport = h("div", { class: "scan-viewport" }, video, h("div", { class: "scan-guide", "aria-hidden": "true" }));
   $("scanner-body").replaceChildren(
-    h("h2", {}, "Scan a barcode"),
+    h("h2", {}, t("scanBarcode")),
     viewport,
     status,
     form,
-    h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", onclick: () => scanner.close() }, "Cancel")),
+    h("div", { class: "sheet-actions" }, h("button", { class: "btn ghost", onclick: () => scanner.close() }, t("cancel"))),
   );
   scanner.showModal();
 
   async function handleCode(code: string) {
     stopScanner();
     viewport.classList.add("found");
-    status.textContent = `Found ${code}. Looking it up…`;
+    status.textContent = t("foundCode", { code });
     try {
       const found = await lookupBarcode(code);
       if (!found) {
         status.replaceChildren(
-          "We couldn't find that product. ",
-          h("button", { class: "link-btn", onclick: () => { scanner.close(); photoInput.click(); } }, "Snap the nutrition label instead"),
-          " and the AI will read it.",
+          t("notFound1"),
+          h("button", { class: "link-btn", onclick: () => { scanner.close(); photoInput.click(); } }, t("notFound2")),
+          t("notFound3"),
         );
         return;
       }
       scanner.close();
       showReview(found.analysis, { thumb: found.image, preview: found.image, noBadge: true });
     } catch (err) {
-      status.textContent = err instanceof LookupError ? err.message : "Something went wrong. Try again.";
+      status.textContent = err instanceof LookupError ? err.message : t("somethingWrong");
     }
   }
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    status.textContent = "This browser can't use the camera here. Type the barcode number instead.";
+    status.textContent = t("noCameraApi");
     viewport.hidden = true;
     return;
   }
@@ -498,15 +527,15 @@ function openScanner() {
     .then((c) => {
       if (!scanner.open) return c.stop();
       scanControls = c;
-      status.textContent = "Point the camera at the barcode. Hold steady about a hand's width away.";
+      status.textContent = t("pointCamera");
     })
     .catch((err: unknown) => {
       viewport.hidden = true;
       const name = err instanceof Error ? err.name : "";
       status.textContent =
         name === "NotAllowedError"
-          ? "Camera access was blocked. Allow camera access for this site in Settings → Safari → Camera, or type the barcode number."
-          : "Couldn't start the camera. Type the barcode number instead.";
+          ? t("cameraBlocked")
+          : t("cameraFailed");
     });
 }
 
@@ -527,38 +556,38 @@ function openWeightDialog() {
         h(
           "div",
           { class: "weight-row" },
-          h("span", {}, parseDate(w.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })),
+          h("span", {}, parseDate(w.date).toLocaleDateString(locale(), { month: "short", day: "numeric", year: "numeric" })),
           h("span", {}, fmtWeight(w.kg, u)),
-          h("button", { class: "icon-btn remove", "aria-label": `Delete weight from ${w.date}`, onclick: () => { deleteWeight(w.date); syncWeight(); drawList(); render(); } }, "×"),
+          h("button", { class: "icon-btn remove", "aria-label": t("deleteWeightFrom", { date: w.date }), onclick: () => { deleteWeight(w.date); syncWeight(); drawList(); render(); } }, "×"),
         ),
       ),
     );
   };
   drawList();
   $("mini-body").replaceChildren(
-    h("h2", {}, "Log weight"),
-    h("div", { class: "field-row" }, h("label", { class: "field" }, h("span", {}, `Weight (${u.weight})`), input), h("label", { class: "field" }, h("span", {}, "Date"), dateInput)),
-    h("p", { class: "muted small" }, "Tip: weigh yourself at the same time of day, like right after waking up. Daily ups and downs are normal; the trend is what counts."),
+    h("h2", {}, t("logWeight")),
+    h("div", { class: "field-row" }, h("label", { class: "field" }, h("span", {}, t("weightWithUnit", { unit: u.weight })), input), h("label", { class: "field" }, h("span", {}, t("date")), dateInput)),
+    h("p", { class: "muted small" }, t("weightTip")),
     list,
     h(
       "div",
       { class: "sheet-actions" },
-      h("button", { class: "btn ghost", onclick: () => mini.close() }, "Close"),
+      h("button", { class: "btn ghost", onclick: () => mini.close() }, t("close")),
       h(
         "button",
         {
           class: "btn primary",
           onclick: () => {
             const kg = weightToKg(parseFloat(input.value), u);
-            if (!(kg >= 30 && kg <= 300)) return toast("Please enter a valid weight.");
+            if (!(kg >= 30 && kg <= 300)) return toast(t("invalidWeight"));
             logWeight(dateInput.value || localDate(), kg);
             syncWeight();
             mini.close();
             render();
-            toast("Weight saved ⚖️");
+            toast(t("weightSaved"));
           },
         },
-        "Save",
+        t("save"),
       ),
     ),
   );
@@ -586,7 +615,7 @@ function renderSettings() {
 
   // Profile
   const profileCard = section(
-    "Profile",
+    t("profile"),
     p
       ? h(
           "div",
@@ -596,30 +625,30 @@ function renderSettings() {
             "div",
             {},
             h("div", { class: "profile-name" }, p.name),
-            h("div", { class: "muted small" }, `${p.age} · ${p.sex === "other" ? "Other" : p.sex === "male" ? "Male" : "Female"} · ${fmtHeight(p.heightCm, u)} · ${fmtWeight(p.weightKg, u)}`),
-            h("div", { class: "muted small" }, `${GOALS[p.goal].emoji} ${GOALS[p.goal].label} · ${ACTIVITY[p.activity].label}`),
+            h("div", { class: "muted small" }, `${p.age} · ${t(p.sex)} · ${fmtHeight(p.heightCm, u)} · ${fmtWeight(p.weightKg, u)}`),
+            h("div", { class: "muted small" }, `${GOAL_EMOJI[p.goal]} ${goalLabel(p.goal)} · ${activityLabel(p.activity)}`),
           ),
         )
-      : h("p", { class: "muted" }, "No profile yet."),
-    h("button", { class: "btn wide", onclick: editProfile }, p ? "Edit profile & goal" : "Set up profile"),
-    h("button", { class: "btn wide ghost", onclick: openWeightDialog }, "⚖️ Log weight"),
+      : h("p", { class: "muted" }, t("noProfile")),
+    h("button", { class: "btn wide", onclick: editProfile }, p ? t("editProfile") : t("setupProfile")),
+    h("button", { class: "btn wide ghost", onclick: openWeightDialog }, t("logWeightBtn")),
   );
 
   // Targets
   const tgt = settings.targets;
   const targetFields: [keyof Targets, string, string][] = [
-    ["calories", "Calories", "kcal"],
-    ["protein", "Protein", "g"],
-    ["carbs", "Carbs", "g"],
-    ["fat", "Fat", "g"],
-    ["fiber", "Fiber", "g"],
-    ["waterMl", "Water", "ml"],
+    ["calories", t("calories"), "kcal"],
+    ["protein", t("protein"), "g"],
+    ["carbs", t("carbs"), "g"],
+    ["fat", t("fat"), "g"],
+    ["fiber", t("fiber"), "g"],
+    ["waterMl", t("water"), "ml"],
   ];
   const auto = settings.autoTargets && !!p;
   const plan = p ? makePlan(p) : null;
   const targetsCard = section(
-    "Daily targets",
-    toggle("Automatic", auto, (v) => { settings.autoTargets = v; recomputeTargets(); rerender(); }, p ? "Worked out from your profile and goal" : "Set up your profile first"),
+    t("dailyTargets"),
+    toggle(t("automatic"), auto, (v) => { settings.autoTargets = v; recomputeTargets(); rerender(); }, p ? t("automaticHint") : t("setupFirst")),
     h(
       "div",
       { class: "target-grid" },
@@ -639,7 +668,7 @@ function renderSettings() {
       ? h(
           "details",
           { class: "why" },
-          h("summary", {}, "How these were worked out"),
+          h("summary", {}, t("howWorkedOut")),
           ...plan.notes.map((n) => h("p", { class: "plan-note" }, "⚠️ ", n)),
           ...plan.why.map((w) => h("div", { class: "why-item" }, h("strong", {}, w.title), h("p", {}, w.text))),
         )
@@ -648,24 +677,24 @@ function renderSettings() {
 
   // Units
   const unitsCard = section(
-    "Units",
-    unitRow("Weight", segmented([{ value: "kg", label: "kg" }, { value: "lb", label: "lb" }], u.weight, (v) => { u.weight = v; rerender(); }, "Weight unit")),
-    unitRow("Height", segmented([{ value: "cm", label: "cm" }, { value: "ftin", label: "ft / in" }], u.height, (v) => { u.height = v; rerender(); }, "Height unit")),
-    unitRow("Energy", segmented([{ value: "kcal", label: "kcal" }, { value: "kJ", label: "kJ" }], u.energy, (v) => { u.energy = v; rerender(); }, "Energy unit")),
-    unitRow("Water", segmented([{ value: "ml", label: "ml / L" }, { value: "floz", label: "fl oz" }], u.water, (v) => { u.water = v; rerender(); }, "Water unit")),
+    t("units"),
+    unitRow(t("weight"), segmented([{ value: "kg", label: "kg" }, { value: "lb", label: "lb" }], u.weight, (v) => { u.weight = v; rerender(); }, t("weight"))),
+    unitRow(t("height"), segmented([{ value: "cm", label: "cm" }, { value: "ftin", label: "ft / in" }], u.height, (v) => { u.height = v; rerender(); }, t("height"))),
+    unitRow(t("energy"), segmented([{ value: "kcal", label: "kcal" }, { value: "kJ", label: "kJ" }], u.energy, (v) => { u.energy = v; rerender(); }, t("energy"))),
+    unitRow(t("water"), segmented([{ value: "ml", label: "ml / L" }, { value: "floz", label: "fl oz" }], u.water, (v) => { u.water = v; rerender(); }, t("water"))),
   );
 
   // Appearance
   const appearanceCard = section(
-    "Appearance",
-    unitRow("Theme", segmented([{ value: "auto", label: "Auto" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }], settings.theme, (v) => { settings.theme = v; applyTheme(); save(); }, "Theme")),
+    t("appearance"),
+    unitRow(t("theme"), segmented([{ value: "auto", label: t("themeAuto") }, { value: "light", label: t("themeLight") }, { value: "dark", label: t("themeDark") }], settings.theme, (v) => { settings.theme = v; applyTheme(); save(); }, t("theme"))),
     h(
       "div",
       { class: "unit-row" },
-      h("span", {}, "Color"),
+      h("span", {}, t("color")),
       h(
         "div",
-        { class: "swatches", role: "radiogroup", "aria-label": "Accent color" },
+        { class: "swatches", role: "radiogroup", "aria-label": t("color") },
         ...ACCENTS.map((a) => h("button", { class: `swatch sw-${a}`, role: "radio", "aria-checked": String(settings.accent === a), "aria-label": a, onclick: () => { settings.accent = a; applyTheme(); rerender(); } })),
       ),
     ),
@@ -673,16 +702,16 @@ function renderSettings() {
 
   // Features
   const featuresCard = section(
-    "Features",
-    toggle("Motivation messages", settings.showMotivation, (v) => { settings.showMotivation = v; save(); }, "A personal message at the top of Today"),
-    toggle("Water tracker", settings.showWater, (v) => { settings.showWater = v; save(); }),
+    t("features"),
+    toggle(t("motivationMsgs"), settings.showMotivation, (v) => { settings.showMotivation = v; save(); }, t("motivationHint")),
+    toggle(t("waterTracker"), settings.showWater, (v) => { settings.showWater = v; save(); }),
     unitRow(
-      u.water === "ml" ? "Glass (ml)" : "Glass (fl oz)",
+      u.water === "ml" ? t("glassMl") : t("glassOz"),
       segmented(
         [200, 250, 330, 500].map((ml) => ({ value: String(ml), label: u.water === "ml" ? `${ml}` : `${Math.round(ml / 29.5735)}` })),
         String(settings.glassMl),
         (v) => { settings.glassMl = Number(v); save(); },
-        "Glass size",
+        u.water === "ml" ? t("glassMl") : t("glassOz"),
       ),
     ),
   );
@@ -690,10 +719,10 @@ function renderSettings() {
   // AI key
   const keyInput = h("input", { type: "password", value: settings.apiKey, placeholder: "AIza...", autocomplete: "off" });
   const aiCard = section(
-    "Free AI",
-    h("label", { class: "field" }, h("span", {}, settings.apiKey ? "Google AI key ✓ saved" : "Google AI key"), keyInput),
-    h("button", { class: "btn wide primary", onclick: () => { settings.apiKey = keyInput.value.trim(); save(); render(); toast(settings.apiKey ? "Key saved 🔑" : "Key removed"); } }, "Save key"),
-    h("p", { class: "muted small" }, "Free, no credit card: sign in at ", h("a", { href: "https://aistudio.google.com/apikey", target: "_blank", rel: "noopener" }, "aistudio.google.com/apikey"), " and tap “Create API key”. 🔒 Saved only on this phone and only sent to Google."),
+    t("freeAi"),
+    h("label", { class: "field" }, h("span", {}, settings.apiKey ? t("aiKeySaved") : t("aiKey")), keyInput),
+    h("button", { class: "btn wide primary", onclick: () => { settings.apiKey = keyInput.value.trim(); save(); render(); toast(settings.apiKey ? t("keySaved") : t("keyRemoved")); } }, t("saveKey")),
+    h("p", { class: "muted small" }, `${t("keyHelp1")} `, h("a", { href: "https://aistudio.google.com/apikey", target: "_blank", rel: "noopener" }, "aistudio.google.com/apikey"), ` ${t("keyHelp2")}`),
   );
 
   // Data
@@ -702,32 +731,32 @@ function renderSettings() {
     const f = restoreInput.files?.[0];
     restoreInput.value = "";
     if (!f) return;
-    if (!confirm("Restoring replaces everything on this phone with the backup. Continue?")) return;
+    if (!confirm(t("confirmRestore"))) return;
     try {
       importBackup(await f.text(), settings.apiKey);
       location.reload();
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't restore that file.");
+      toast(e instanceof Error ? e.message : t("restoreFailed"));
     }
   });
   const dataCard = section(
-    "Your data",
-    h("p", { class: "muted small" }, "Everything is stored only on this phone. Back up now and then so you don't lose it if Safari's data gets cleared. Backups never include your AI key."),
-    h("button", { class: "btn wide", onclick: () => download(`foodchecker-backup-${localDate()}.json`, exportBackup(settings), "application/json") }, "💾 Back up everything"),
-    h("button", { class: "btn wide", onclick: () => restoreInput.click() }, "📂 Restore from backup"),
-    h("button", { class: "btn wide", onclick: () => download(`foodchecker-${localDate()}.csv`, exportCsv(), "text/csv") }, "📊 Export food log (CSV)"),
+    t("yourData"),
+    h("p", { class: "muted small" }, t("dataHelp")),
+    h("button", { class: "btn wide", onclick: () => download(`foodchecker-backup-${localDate()}.json`, exportBackup(settings), "application/json") }, t("backup")),
+    h("button", { class: "btn wide", onclick: () => restoreInput.click() }, t("restore")),
+    h("button", { class: "btn wide", onclick: () => download(`foodchecker-${localDate()}.csv`, exportCsv(), "text/csv") }, t("exportCsv")),
     h(
       "button",
       {
         class: "btn wide danger",
         onclick: () => {
-          if (!confirm("Delete ALL your meals, weights, settings and your key from this phone?")) return;
-          if (!confirm("Are you really sure? This can't be undone.")) return;
+          if (!confirm(t("confirmDeleteAll"))) return;
+          if (!confirm(t("confirmDeleteAll2"))) return;
           resetEverything();
           location.reload();
         },
       },
-      "Delete everything",
+      t("deleteEverything"),
     ),
     restoreInput,
   );
@@ -735,10 +764,39 @@ function renderSettings() {
   const about = h(
     "p",
     { class: "footer-note" },
-    "FoodChecker · AI estimates are a guide, not medical advice. If you have a health condition, are pregnant, or have a history of disordered eating, talk to a doctor before changing how you eat.",
+    t("about"),
   );
 
-  root.replaceChildren(h("h1", { class: "page-title" }, "Settings"), profileCard, targetsCard, unitsCard, appearanceCard, featuresCard, aiCard, dataCard, about);
+  root.replaceChildren(h("h1", { class: "page-title" }, t("settings")), languageCard(), profileCard, targetsCard, unitsCard, appearanceCard, featuresCard, aiCard, dataCard, about);
+}
+
+function languageCard() {
+  return h(
+    "section",
+    { class: "card settings-card" },
+    h("h3", {}, `🌍 ${t("language")}`),
+    h(
+      "div",
+      { class: "lang-pick", role: "radiogroup", "aria-label": t("language") },
+      ...LANGUAGES.map((l) =>
+        h("button", { type: "button", class: "lang-chip", role: "radio", "aria-checked": String(getLanguage() === l.code), onclick: () => changeLanguage(l.code) }, `${l.flag} ${l.name}`),
+      ),
+    ),
+  );
+}
+
+function changeLanguage(code: (typeof LANGUAGES)[number]["code"]) {
+  settings.language = code;
+  setLanguage(code);
+  recomputeTargets();
+  save();
+  applyLanguage();
+  render();
+}
+
+/** Text that lives in index.html (tab bar). */
+function applyLanguage() {
+  for (const el of document.querySelectorAll<HTMLElement>("[data-i18n]")) el.textContent = t(el.dataset.i18n as StringKey);
 }
 
 function unitRow(label: string, control: HTMLElement) {
@@ -752,6 +810,12 @@ function editProfile() {
     apiKey: settings.apiKey,
     firstRun: !settings.onboarded,
     onDone: finishOnboarding,
+    onLanguage: (code) => {
+      settings.language = code;
+      save();
+      applyLanguage();
+      render();
+    },
   });
 }
 
@@ -767,7 +831,7 @@ function finishOnboarding(r: OnboardingResult) {
   if (weightChanged) logWeight(localDate(), r.profile.weightKg);
   save();
   render();
-  toast(first ? `You're all set, ${r.profile.name}! 🎉` : "Profile updated ✅");
+  toast(first ? t("allSet", { name: r.profile.name }) : t("profileUpdated"));
 }
 
 // ======================= wiring =======================
@@ -803,8 +867,23 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
 }
 
 applyTheme();
+applyLanguage();
 render();
+hideSplash();
 if (!settings.onboarded) setTimeout(editProfile, 300);
 
 // Ask the browser to keep this app's data even when the phone is low on space.
 navigator.storage?.persist?.().catch(() => {});
+
+/** Fade out the start-up splash once the app has drawn (kept on screen briefly so the animation can play). */
+function hideSplash() {
+  const splash = document.getElementById("splash");
+  if (!splash) return;
+  const tag = document.getElementById("splash-tag");
+  if (tag) tag.textContent = t("tagline");
+  const wait = Math.max(0, 1300 - performance.now());
+  setTimeout(() => {
+    splash.classList.add("hide");
+    setTimeout(() => splash.remove(), 600);
+  }, wait);
+}

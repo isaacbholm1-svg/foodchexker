@@ -1,4 +1,5 @@
 import { ApiError, GoogleGenAI } from "@google/genai";
+import { languageEnglishName, t } from "./i18n";
 
 // Free Google Gemini models, tried in order. A model can drop off the free tier over time;
 // when that happens we move on to the next one and remember which one worked.
@@ -82,6 +83,7 @@ export async function analyzeMeal(opts: {
         : `Estimate the nutrition for this meal: ${text}`
       : "Estimate the nutrition for this meal.",
   });
+  parts.push({ text: `Write meal_name, the food names, portions and notes in ${languageEnglishName()}.` });
 
   const remembered = readStorage(MODEL_KEY);
   const listed = await availableModels(ai, opts.apiKey);
@@ -123,8 +125,8 @@ export async function analyzeMeal(opts: {
     removeStorage(LIST_KEY); // ask Google for a fresh model list next time
     throw new AnalysisError(
       (lastError.status === 429
-        ? "Your key has no free AI quota right now. Wait a few minutes and try again, or try again tomorrow."
-        : "Google couldn't find a free AI model for your key. Make sure the key was made at aistudio.google.com/apikey, then try again.") + detail,
+        ? t("aiNoQuota")
+        : t("aiNoModel")) + detail,
     );
   }
   throw new AnalysisError(describeApiError(lastError) + detail);
@@ -174,10 +176,10 @@ async function generate(ai: GoogleGenAI, model: string, parts: Part[], mode: Mod
           config: { systemInstruction: SYSTEM, temperature: 0.2 },
         });
   if (res.promptFeedback?.blockReason) {
-    throw new AnalysisError("The AI declined to analyze this. Try a different photo or description.");
+    throw new AnalysisError(t("aiDeclined"));
   }
   const raw = res.text;
-  if (!raw) throw new AnalysisError("The AI didn't return an answer. Please try again.");
+  if (!raw) throw new AnalysisError(t("aiNoAnswer"));
   return raw;
 }
 
@@ -260,20 +262,20 @@ function describeApiError(err: unknown): string {
   if (err instanceof ApiError) {
     const msg = err.message.toLowerCase();
     if (err.status === 400 && (msg.includes("api key") || msg.includes("api_key"))) {
-      return "Your API key was rejected. Check it in Settings.";
+      return t("aiBadKey");
     }
-    if (err.status === 401 || err.status === 403) return "Your API key was rejected. Check it in Settings.";
+    if (err.status === 401 || err.status === 403) return t("aiBadKey");
     if (err.status === 429) {
-      return "You've hit the free usage limit. Wait a minute (or until tomorrow if it keeps happening) and try again.";
+      return t("aiRateLimit");
     }
     if (err.status === 400 && msg.includes("location")) {
-      return "Google's free AI isn't available in your country.";
+      return t("aiCountry");
     }
-    if (err.status >= 500) return "Google's AI service is busy. Try again in a moment.";
-    return "Google rejected the request. Try again, or send this message to whoever set up the app.";
+    if (err.status >= 500) return t("aiBusy");
+    return t("aiRejected");
   }
-  if (err instanceof TypeError) return "Couldn't reach the AI service. Check your internet connection.";
-  return err instanceof Error ? err.message : "Something went wrong. Try again.";
+  if (err instanceof TypeError) return t("aiOffline");
+  return err instanceof Error ? err.message : t("somethingWrong");
 }
 
 const n = (v: unknown) => {
@@ -287,19 +289,19 @@ function normalize(raw: string): Analysis {
   try {
     data = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ""));
   } catch {
-    throw new AnalysisError("Couldn't read the AI's answer. Please try again.");
+    throw new AnalysisError(t("aiUnreadable"));
   }
   const items = Array.isArray(data.items) ? data.items : [];
   const conf = s(data.confidence);
   return {
-    meal_name: s(data.meal_name, "Meal") || "Meal",
+    meal_name: s(data.meal_name, t("meal")) || t("meal"),
     confidence: conf === "low" || conf === "high" ? conf : "medium",
     notes: s(data.notes),
     items: items
       .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
       .map((i) => ({
-        name: s(i.name, "Food") || "Food",
-        portion: s(i.portion, "1 serving") || "1 serving",
+        name: s(i.name, t("food")) || t("food"),
+        portion: s(i.portion, t("oneServing")) || t("oneServing"),
         calories: n(i.calories),
         protein_g: n(i.protein_g),
         carbs_g: n(i.carbs_g),
