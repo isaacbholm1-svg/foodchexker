@@ -5,4 +5,4 @@
  * was created with (https://web3forms.com). The key is designed to be public, and the email
  * address itself never appears in the code. Leave empty to share feedback via the share sheet.
  */
-export const FEEDBACK_ACCESS_KEY = "";
+export const FEEDBACK_ACCESS_KEY = "bf14aa95-ccae-48ae-b3f3-e6c1fd8adae2";
