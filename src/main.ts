@@ -7,6 +7,9 @@ import { renderRecipes, renderShopping } from "./recipes";
 import { renderPlanner } from "./planner";
 import { budgetBonus, burnedOn, renderExercise, workoutsOn } from "./exercise";
 import { myFoods, renderMyFoods, type MyFood } from "./myfoods";
+import { checkinPrompt, renderCheckin } from "./checkin";
+import { renderFasting } from "./fasting";
+import { shareDay } from "./shareday";
 import { FEEDBACK_ACCESS_KEY } from "./config";
 import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
 import { confetti, countUp, replay } from "./fx";
@@ -14,7 +17,7 @@ import { LookupError, lookupBarcode, startScanner, type ScanControls } from "./b
 import { prepareImage } from "./image";
 import { motivation } from "./motivation";
 import { LANGUAGES, celebrateLines, detectLanguage, getLanguage, locale, setLanguage, t, tips, type StringKey } from "./i18n";
-import { GOAL_EMOJI, activitySummary, energyValue, fmtEnergy, fmtHeight, fmtWater, fmtWeight, goalLabel, makePlan, weightToKg, weightValue } from "./nutrition";
+import { GOAL_EMOJI, activitySummary, bmi, energyValue, fmtEnergy, fmtHeight, fmtWater, fmtWeight, goalLabel, makePlan, weightToKg, weightValue } from "./nutrition";
 import { runOnboarding, type OnboardingResult } from "./onboarding";
 import { currentStreak, renderStats, type Range } from "./stats";
 import {
@@ -395,7 +398,9 @@ function renderToday() {
   );
 
   root.replaceChildren(
-    ...[header, moti, summary, add, sugg, waterCard, exerciseCard(), log, tipCard, h("p", { class: "footer-note" }, t("aiDisclaimer"))].filter((n): n is HTMLElement => !!n),
+    ...[header, moti, featureOn("checkin") && isToday ? checkinPrompt(viewDate, () => { checkBadges(); render(); }) : null, summary, add, sugg, waterCard, exerciseCard(), log,
+      featureOn("shareday") && entries.length ? h("button", { class: "btn wide ghost share-day-btn", onclick: () => shareToday() }, `📤 ${t("shareDay")}`) : null,
+      tipCard, h("p", { class: "footer-note" }, t("aiDisclaimer"))].filter((n): n is HTMLElement => !!n),
   );
   root.classList.toggle("stagger", animateIn);
   animateIn = false;
@@ -1288,6 +1293,37 @@ function exerciseCard(): HTMLElement | null {
   );
 }
 
+function fastingAllowed(): boolean {
+  const p = settings.profile;
+  return !!p && p.age >= 18 && bmi(p) >= 18.5;
+}
+
+function shareToday() {
+  const entries = entriesFor(viewDate);
+  const items = entries.flatMap((e) => e.items);
+  const tot = sum(items);
+  const tg = settings.targets;
+  const sc = featureOn("score") ? dayScore(entries, waterFor(viewDate), settings) : null;
+  void shareDay({
+    date: viewDate,
+    name: settings.profile?.name ?? "",
+    eaten: tot.calories,
+    target: tg.calories,
+    energyUnit: U().energy,
+    fmt: (n) => fmtEnergy(n, U(), false),
+    protein: [tot.protein_g, tg.protein],
+    carbs: [tot.carbs_g, tg.carbs],
+    fat: [tot.fat_g, tg.fat],
+    water: featureOn("water") ? fmtWater(waterFor(viewDate), U()) : null,
+    streak: featureOn("streak") ? currentStreak() : 0,
+    score: sc?.score ?? null,
+    meals: entries.length,
+  });
+}
+
+registerMorePage({ id: "checkin", emoji: "😊", color: "#f2b134", title: "checkin", desc: "checkinDesc", section: "tools", visible: () => featureOn("checkin"), render: (root) => renderCheckin(root) });
+registerMorePage({ id: "fasting", emoji: "⏱️", color: "#3aa8c1", title: "fasting", desc: "fastingDesc", section: "tools", visible: () => featureOn("fasting") && fastingAllowed(), render: (root) => renderFasting(root) });
+registerMorePage({ id: "shareday", emoji: "📤", color: "#5b8def", title: "shareDay", desc: "shareDayDesc", section: "tools", visible: () => featureOn("shareday"), open: () => { viewDate = localDate(); shareToday(); } });
 registerMorePage({
   id: "exercise",
   emoji: "🏃",
@@ -1370,10 +1406,11 @@ registerMorePage({ id: "shopping", emoji: "🛒", color: "#2f9e5e", title: "shop
 registerMorePage({ id: "features", emoji: "🧩", color: "#e0a526", title: "features", desc: "featuresDesc", section: "app", render: (root) => renderFeatures(root) });
 
 function renderFeatures(root: HTMLElement) {
+  const shown = FEATURES.filter((f) => f.id !== "fasting" || fastingAllowed());
   const groups: [string, FeatureId[]][] = [
-    [t("today"), FEATURES.filter((f) => f.group === "today").map((f) => f.id)],
-    [t("progress"), FEATURES.filter((f) => f.group === "progress").map((f) => f.id)],
-    [t("moreTools"), FEATURES.filter((f) => f.group === "tools").map((f) => f.id)],
+    [t("today"), shown.filter((f) => f.group === "today").map((f) => f.id)],
+    [t("progress"), shown.filter((f) => f.group === "progress").map((f) => f.id)],
+    [t("moreTools"), shown.filter((f) => f.group === "tools").map((f) => f.id)],
   ];
   const row = (id: FeatureId) => {
     const f = FEATURES.find((x) => x.id === id)!;

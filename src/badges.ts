@@ -1,10 +1,16 @@
 // Achievements (worked out from the saved data) and the daily score.
 import { t, type StringKey } from "./i18n";
+import { allWorkouts } from "./exercise";
+import { recipeCount } from "./recipes";
+import { myFoods } from "./myfoods";
+import { checkinDays } from "./checkin";
+import { completedFasts } from "./fasting";
 import { addDays, allEntries, allFavorites, allWeights, localDate, waterFor, type Entry, type Settings } from "./store";
 
 export interface Badge {
   id: string;
   emoji: string;
+  adultsOnly?: boolean;
 }
 
 export const BADGES: Badge[] = [
@@ -28,7 +34,17 @@ export const BADGES: Badge[] = [
   { id: "weigh_10", emoji: "📉" },
   { id: "early_bird", emoji: "🌅" },
   { id: "variety_20", emoji: "🌈" },
+  { id: "workout_1", emoji: "🏃" },
+  { id: "workout_10", emoji: "🏅" },
+  { id: "recipe_1", emoji: "📖" },
+  { id: "plan_1", emoji: "🗓️" },
+  { id: "myfood_1", emoji: "🥫" },
+  { id: "checkin_7", emoji: "😊" },
+  { id: "fast_1", emoji: "⏱️", adultsOnly: true },
 ];
+
+/** The achievements this person can see (fasting ones only for adults). */
+export const visibleBadges = (settings: Settings) => BADGES.filter((b) => !b.adultsOnly || (settings.profile?.age ?? 0) >= 18);
 
 export const badgeName = (b: Badge) => t(`b_${b.id}` as StringKey);
 export const badgeDesc = (b: Badge) => t(`b_${b.id}_d` as StringKey);
@@ -101,6 +117,14 @@ export function earnedBadges(settings: Settings): Set<string> {
   add("weigh_10", weighIns >= 10);
   add("early_bird", early);
   add("variety_20", foods.size >= 20);
+  const workouts = allWorkouts().length;
+  add("workout_1", workouts >= 1);
+  add("workout_10", workouts >= 10);
+  add("recipe_1", recipeCount() >= 1);
+  add("plan_1", sources.has("plan"));
+  add("myfood_1", myFoods().length >= 1);
+  add("checkin_7", checkinDays() >= 7);
+  add("fast_1", completedFasts() >= 1);
   return out;
 }
 

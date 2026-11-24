@@ -18,7 +18,10 @@ export type FeatureId =
   | "shopping"
   | "planner"
   | "exercise"
-  | "myfoods";
+  | "myfoods"
+  | "checkin"
+  | "fasting"
+  | "shareday";
 
 export interface FeatureInfo {
   id: FeatureId;
@@ -30,6 +33,9 @@ export interface FeatureInfo {
 
 export const FEATURES: FeatureInfo[] = [
   { id: "chat", emoji: "💬", label: "f_chat", hint: "f_chatHint", group: "tools" },
+  { id: "checkin", emoji: "😊", label: "checkin", hint: "checkinDesc", group: "today" },
+  { id: "shareday", emoji: "📤", label: "shareDay", hint: "shareDayDesc", group: "today" },
+  { id: "fasting", emoji: "⏱️", label: "fasting", hint: "fastingFeatureHint", group: "tools" },
   { id: "exercise", emoji: "🏃", label: "exercise", hint: "exerciseTileDesc", group: "tools" },
   { id: "myfoods", emoji: "🥫", label: "myFoods", hint: "myFoodsDesc", group: "tools" },
   { id: "planner", emoji: "🗓️", label: "planner", hint: "plannerDesc", group: "tools" },

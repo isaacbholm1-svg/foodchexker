@@ -1,5 +1,5 @@
 import { featureOn } from "./features";
-import { BADGES, badgeDesc, badgeName, earnedBadges } from "./badges";
+import { badgeDesc, badgeName, earnedBadges, visibleBadges } from "./badges";
 import { locale, t } from "./i18n";
 import { fmtEnergy, fmtNum, fmtWeight, energyValue, weightValue, goalEta } from "./nutrition";
 import { addDays, allEntries, allWeights, localDate, parseDate, type Entry, type Goal, type Settings } from "./store";
@@ -383,15 +383,16 @@ function weekCompare(totals: Map<string, DayTotal>, settings: Settings): HTMLEle
 }
 
 function badgesCard(settings: Settings): HTMLElement {
-  const earned = earnedBadges(settings);
+  const list = visibleBadges(settings);
+  const earned = new Set([...earnedBadges(settings)].filter((id) => list.some((b) => b.id === id)));
   return h(
     "section",
     { class: "card" },
-    h("div", { class: "card-head" }, h("h3", {}, t("achievements")), h("span", { class: "muted small" }, t("badgesCount", { n: earned.size, m: BADGES.length }))),
+    h("div", { class: "card-head" }, h("h3", {}, t("achievements")), h("span", { class: "muted small" }, t("badgesCount", { n: earned.size, m: list.length }))),
     h(
       "div",
       { class: "badge-grid" },
-      ...BADGES.map((b, i) => {
+      ...list.map((b, i) => {
         const got = earned.has(b.id);
         return h(
           "button",
