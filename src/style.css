@@ -1089,3 +1089,42 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.45); }
 .chat-row { display: flex; align-items: flex-end; gap: 8px; }
 .chat-scope { position: static; margin: 0; text-align: center; font-size: 11px; pointer-events: none; }
 .chat-chips .chip { text-align: left; }
+
+/* =================== More tab =================== */
+.subhead { padding: 6px 0 0; }
+.back-btn { border: 0; background: none; color: var(--accent); font-size: 17px; font-weight: 600; padding: 6px 0; }
+.more-section { font-size: 13px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); margin: 18px 4px 8px; }
+.more-grid { display: flex; flex-direction: column; background: var(--card); border-radius: 18px; overflow: hidden; box-shadow: var(--shadow); }
+.more-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 12px 14px;
+  animation: card-in 0.4s ease-out both;
+}
+.more-tile + .more-tile { border-top: 1px solid var(--line); }
+.more-tile:active { background: var(--bg); }
+.more-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 21px;
+  background: color-mix(in srgb, var(--tile) 22%, var(--card));
+}
+.more-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.more-title { font-weight: 650; }
+.more-desc { font-size: 13px; color: var(--muted); }
+.more-chev { color: var(--muted); font-size: 22px; }
+.more-profile { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; text-align: left; }
+.about-card { text-align: center; }
+.about-card h2 { margin: 6px 0 0; }
+.about-card p { text-align: left; }
+.about-logo { font-size: 56px; animation: an-bob 2.4s ease-in-out infinite; }
+.more-page .page-title { margin-top: 4px; }
