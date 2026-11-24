@@ -5,6 +5,8 @@ import { registerMorePage, renderMore, openMorePage, currentMorePage } from "./m
 import { FEATURES, featureOn, setFeature, setFeatureSource, type FeatureId } from "./features";
 import { renderRecipes, renderShopping } from "./recipes";
 import { renderPlanner } from "./planner";
+import { budgetBonus, burnedOn, renderExercise, workoutsOn } from "./exercise";
+import { myFoods, renderMyFoods, type MyFood } from "./myfoods";
 import { FEEDBACK_ACCESS_KEY } from "./config";
 import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
 import { confetti, countUp, replay } from "./fx";
@@ -210,8 +212,10 @@ function renderToday() {
   }
 
   // --- summary ring + macros (animated from the last values shown) ---
-  const left = tg.calories - totals.calories;
-  const frac = Math.min(totals.calories / (tg.calories || 1), 1);
+  const bonus = featureOn("exercise") ? budgetBonus(viewDate) : 0;
+  const budgetCal = tg.calories + bonus;
+  const left = budgetCal - totals.calories;
+  const frac = Math.min(totals.calories / (budgetCal || 1), 1);
   const C = 2 * Math.PI * 52;
   const ringSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   ringSvg.setAttribute("viewBox", "0 0 120 120");
@@ -223,7 +227,7 @@ function renderToday() {
   requestAnimationFrame(() => requestAnimationFrame(() => (ringFill.style.strokeDashoffset = String(C * (1 - frac)))));
 
   const ringNum = h("div", { class: fmtEnergy(Math.abs(left), u, false).length > 5 ? "ring-num long" : "ring-num" });
-  countUp(ringNum, same ? Math.abs(lastShown.left) : Math.abs(tg.calories), Math.abs(left), (n) => fmtEnergy(n, u, false));
+  countUp(ringNum, same ? Math.abs(lastShown.left) : Math.abs(budgetCal), Math.abs(left), (n) => fmtEnergy(n, u, false));
   const eatenNum = h("span", {});
   countUp(eatenNum, same ? lastShown.eaten : 0, totals.calories, (n) => fmtEnergy(n, u, false));
 
@@ -252,7 +256,8 @@ function renderToday() {
       h(
         "div",
         { class: "summary-side" },
-        h("div", { class: "eaten" }, eatenNum, ` / ${fmtEnergy(tg.calories, u)}`),
+        h("div", { class: "eaten" }, eatenNum, ` / ${fmtEnergy(budgetCal, u)}`),
+        bonus > 0 ? h("div", { class: "muted small budget-plus" }, `🏃 ${t("budgetPlus", { kcal: fmtEnergy(bonus, u) })}`) : null,
         macro(t("protein"), "protein", totals.protein_g, tg.protein),
         macro(t("carbs"), "carbs", totals.carbs_g, tg.carbs),
         macro(t("fat"), "fat", totals.fat_g, tg.fat),
@@ -307,6 +312,7 @@ function renderToday() {
     h("div", { class: "or" }, t("orDescribe")),
     form,
     favs.length && featureOn("quickadd") ? chipRow(t("favorites"), favs, (i) => showReview({ meal_name: favs[i].name, items: favs[i].items.map((x) => ({ ...x })), confidence: "high", notes: "" }, { thumb: favs[i].thumb, preview: favs[i].thumb, noBadge: true, source: "favorite" })) : null,
+    myFoods().length && featureOn("myfoods") ? chipRow(`🥫 ${t("myFoods")}`, myFoods(), (i) => logMyFood(myFoods()[i])) : null,
     recents.length && featureOn("quickadd") ? chipRow(t("logAgainNoAi"), recents, (i) => reLog(recents[i])) : null,
   );
 
@@ -389,7 +395,7 @@ function renderToday() {
   );
 
   root.replaceChildren(
-    ...[header, moti, summary, add, sugg, waterCard, log, tipCard, h("p", { class: "footer-note" }, t("aiDisclaimer"))].filter((n): n is HTMLElement => !!n),
+    ...[header, moti, summary, add, sugg, waterCard, exerciseCard(), log, tipCard, h("p", { class: "footer-note" }, t("aiDisclaimer"))].filter((n): n is HTMLElement => !!n),
   );
   root.classList.toggle("stagger", animateIn);
   animateIn = false;
@@ -1261,6 +1267,47 @@ function applyLanguage() {
 }
 
 // ---------------- More tab ----------------
+function logMyFood(f: MyFood) {
+  showReview(
+    { meal_name: f.name, items: [{ name: f.name, portion: f.portion, calories: f.calories, protein_g: f.protein_g, carbs_g: f.carbs_g, fat_g: f.fat_g, fiber_g: 0, sugar_g: 0 }], confidence: "high", notes: "" },
+    { noBadge: true, source: "myfood" },
+  );
+}
+
+function exerciseCard(): HTMLElement | null {
+  if (!featureOn("exercise")) return null;
+  const list = workoutsOn(viewDate);
+  if (!list.length) return null;
+  const min = list.reduce((a, w) => a + w.minutes, 0);
+  return h(
+    "button",
+    { class: "card ex-today", onclick: () => { openMorePage("exercise"); setTab("more"); } },
+    h("span", { class: "ex-today-emoji", "aria-hidden": "true" }, "🏃"),
+    h("span", { class: "more-text" }, h("span", { class: "more-title" }, t("exercise")), h("span", { class: "more-desc" }, t("burnedToday", { min, kcal: fmtEnergy(burnedOn(viewDate), U()) }))),
+    h("span", { class: "more-chev", "aria-hidden": "true" }, "›"),
+  );
+}
+
+registerMorePage({
+  id: "exercise",
+  emoji: "🏃",
+  color: "#e5484d",
+  title: "exercise",
+  desc: "exerciseTileDesc",
+  section: "tools",
+  visible: () => featureOn("exercise"),
+  render: (root) => renderExercise(root, { weightKg: () => settings.profile?.weightKg ?? 70, units: U, onChange: () => checkBadges() }),
+});
+registerMorePage({
+  id: "myfoods",
+  emoji: "🥫",
+  color: "#d9822b",
+  title: "myFoods",
+  desc: "myFoodsDesc",
+  section: "tools",
+  visible: () => featureOn("myfoods"),
+  render: (root) => renderMyFoods(root, { units: U, log: (f) => { viewDate = localDate(); logMyFood(f); } }),
+});
 registerMorePage({
   id: "planner",
   emoji: "🗓️",
