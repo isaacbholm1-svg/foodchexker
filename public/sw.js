@@ -1,5 +1,5 @@
 // Offline support: the app shell loads without a connection (AI analysis still needs internet).
-const CACHE = "foodchexker-v1";
+const CACHE = "foodchecker-v2";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["./", "./manifest.webmanifest", "./icon.svg"])));

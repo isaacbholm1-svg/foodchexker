@@ -213,13 +213,14 @@ export function exportCsv(): string {
 /** Full backup. The API key is left out on purpose so a shared backup file never leaks it. */
 export function exportBackup(settings: Settings): string {
   const { apiKey: _omit, ...rest } = settings;
-  return JSON.stringify({ app: "foodchexker", version: 2, exportedAt: new Date().toISOString(), settings: rest, entries, weights, water });
+  return JSON.stringify({ app: "foodchecker", version: 2, exportedAt: new Date().toISOString(), settings: rest, entries, weights, water });
 }
 
 export function importBackup(json: string, keepApiKey: string): void {
   const data = JSON.parse(json);
-  if (!data || data.app !== "foodchexker" || !Array.isArray(data.entries)) {
-    throw new Error("That file isn't a FoodChexker backup.");
+  // "foodchexker" = backups made before the app was renamed.
+  if (!data || (data.app !== "foodchecker" && data.app !== "foodchexker") || !Array.isArray(data.entries)) {
+    throw new Error("That file isn't a FoodChecker backup.");
   }
   entries = data.entries;
   weights = Array.isArray(data.weights) ? data.weights : [];

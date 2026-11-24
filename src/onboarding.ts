@@ -68,7 +68,7 @@ export function runOnboarding(opts: {
       nextLabel: "Let's go",
       render: () => [
         h("div", { class: "ob-hero" }, "🥗"),
-        h("h1", {}, "Welcome to FoodChexker"),
+        h("h1", {}, "Welcome to FoodChecker"),
         h("p", { class: "lead" }, "Snap a photo of your food and free AI counts the calories for you."),
         h(
           "ul",
@@ -94,7 +94,7 @@ export function runOnboarding(opts: {
   });
 
   steps.push({
-    valid: () => (p.age >= 13 && p.age <= 100 ? null : p.age > 0 && p.age < 13 ? "FoodChexker is for ages 13 and up." : "Please enter your age."),
+    valid: () => (p.age >= 13 && p.age <= 100 ? null : p.age > 0 && p.age < 13 ? "FoodChecker is for ages 13 and up." : "Please enter your age."),
     render: () => [
       h("h2", {}, "About you"),
       h("p", { class: "muted" }, "Your age and sex change how many calories your body burns."),
