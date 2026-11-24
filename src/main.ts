@@ -4,6 +4,7 @@ import { renderChat } from "./chat";
 import { registerMorePage, renderMore, openMorePage, currentMorePage } from "./more";
 import { FEATURES, featureOn, setFeature, setFeatureSource, type FeatureId } from "./features";
 import { renderRecipes, renderShopping } from "./recipes";
+import { renderPlanner } from "./planner";
 import { FEEDBACK_ACCESS_KEY } from "./config";
 import { BADGES, badgeDesc, badgeName, dayScore, earnedBadges, type ScorePart } from "./badges";
 import { confetti, countUp, replay } from "./fx";
@@ -1260,6 +1261,30 @@ function applyLanguage() {
 }
 
 // ---------------- More tab ----------------
+registerMorePage({
+  id: "planner",
+  emoji: "🗓️",
+  color: "#8a63d2",
+  title: "planner",
+  desc: "plannerDesc",
+  section: "tools",
+  visible: () => featureOn("planner"),
+  render: (root) =>
+    renderPlanner(root, {
+      settings: () => settings,
+      goal: () => (settings.profile ? goalLabel(settings.profile.goal) : "eat balanced"),
+      aiBadge,
+      openSettings: () => setTab("settings"),
+      log: (m) => {
+        viewDate = localDate();
+        pendingMeal = m.meal;
+        showReview(
+          { meal_name: m.title, items: [{ name: m.title, portion: m.portion, calories: m.calories, protein_g: m.protein_g, carbs_g: m.carbs_g, fat_g: m.fat_g, fiber_g: 0, sugar_g: 0 }], confidence: "medium", notes: "" },
+          { noBadge: true, source: "plan" },
+        );
+      },
+    }),
+});
 registerMorePage({
   id: "recipes",
   emoji: "📖",
