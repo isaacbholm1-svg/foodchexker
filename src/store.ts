@@ -19,7 +19,7 @@ export interface Entry {
   source?: EntrySource; // how it was logged (used for achievements)
 }
 
-export type EntrySource = "photo" | "text" | "barcode" | "quick" | "repeat" | "favorite" | "plan";
+export type EntrySource = "photo" | "text" | "barcode" | "quick" | "repeat" | "favorite" | "plan" | "myfood";
 
 export interface Favorite {
   name: string;
