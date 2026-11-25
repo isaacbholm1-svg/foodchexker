@@ -60,16 +60,18 @@ export function setFeatureSource(get: () => Settings) {
   source = get;
 }
 
-/** Every feature starts switched on; people can turn off what they don't want in More → Features. */
+/** Switched on for new people; the rest can be turned on in More → Features. */
+export const DEFAULT_ON = new Set<FeatureId>(["motivation", "scanner", "quickadd", "suggestions", "water", "tips", "score", "streak", "badges", "weight", "report", "chat"]);
+
 export function featureOn(id: FeatureId, s: Settings = source()): boolean {
-  return s.features?.[id] !== false;
+  return s.features?.[id] ?? DEFAULT_ON.has(id);
 }
 
-/** One-time reset so everyone gets every feature switched on (returns true if it changed anything). */
+/** One-time reset to the default switches (returns true if it changed anything). */
 export function migrateFeatures(s: Settings): boolean {
-  if (s.featuresVersion === 2) return false;
-  setAllFeatures(s, true);
-  s.featuresVersion = 2;
+  if (s.featuresVersion === 3) return false;
+  s.features = Object.fromEntries(FEATURES.map((f) => [f.id, DEFAULT_ON.has(f.id)]));
+  s.featuresVersion = 3;
   return true;
 }
 
