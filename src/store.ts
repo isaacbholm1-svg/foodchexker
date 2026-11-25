@@ -72,6 +72,7 @@ export interface Settings {
   glassMl: number;
   language?: Lang; // unset = follow the phone's language
   features?: Partial<Record<string, boolean>>; // feature switches; missing = on
+  featuresVersion?: number;
 }
 
 const ENTRIES_KEY = "fc.entries.v1";
