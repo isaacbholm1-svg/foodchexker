@@ -539,11 +539,13 @@ export async function weeklyReport(apiKey: string, summary: string): Promise<Wee
 export interface ChatTurn {
   role: "user" | "model";
   text: string;
+  image?: string; // base64 JPEG, only sent for the newest message
 }
 
 export interface ChatReply {
   text: string;
   sources: { title: string; url: string }[];
+  log?: string; // a food the person ate, ready to log
 }
 
 const CHAT_SYSTEM = `You are FoodChecker's food assistant inside a calorie-tracking app.
@@ -551,7 +553,9 @@ You ONLY help with: food, nutrition, calories and macros, ingredients, recipes, 
 If the user asks about anything else (for example news, homework, coding, sports results, politics, celebrities, other apps), politely say in one or two sentences that you can only help with food, nutrition and recipes, and suggest a food-related question instead. Do not answer the off-topic question, even partly.
 Safety: never recommend extreme diets, very low calorie intakes, skipping meals, purging, or pills. Be kind and never shame. If someone seems to struggle with eating, gently suggest talking to a doctor or someone they trust. For medical conditions, allergies or pregnancy, give general information and suggest asking a doctor or dietitian. For children and teens, focus on balanced, growth-friendly eating.
 Style: friendly and concise. Use short paragraphs or bullet lists. For recipes give: a title, servings, an ingredients list with amounts, numbered steps, and approximate calories and protein per serving. Use metric units unless the user prefers otherwise.
-Use Google Search when you need facts you are unsure about (for example nutrition of a specific product or restaurant dish).`;
+Use Google Search when you need facts you are unsure about (for example nutrition of a specific product or restaurant dish).
+Photos: the user may send a photo. If it shows food, say what you see, estimate the portion and the calories, protein, carbs and fat. If it shows no food, say so kindly.
+Logging: when the user tells you what they ate or are about to eat, or sends a photo of their meal, end your reply with one extra final line in exactly this format: [[LOG: short description of the food with portion sizes]] (written in the user's language). Add this line only for food the user actually ate or will eat, never for recipes, ideas or general questions. The app turns that line into a "Log it" button, so do not mention it.`;
 
 /** One chat answer. Uses Google Search grounding when the model supports it, otherwise answers without it. */
 export async function chatAnswer(opts: { apiKey: string; history: ChatTurn[]; context: string }): Promise<ChatReply> {
@@ -562,7 +566,14 @@ export async function chatAnswer(opts: { apiKey: string; history: ChatTurn[]; co
   const candidates = listed.length ? listed : MODELS;
   const order = [...new Set([...(remembered && candidates.includes(remembered) ? [remembered] : []), ...candidates])].slice(0, 4);
   const system = `${CHAT_SYSTEM}\nAlways reply in ${languageEnglishName()}.\nAbout the user: ${opts.context}`;
-  const contents = opts.history.slice(-16).map((m) => ({ role: m.role, parts: [{ text: m.text }] }));
+  const recent = opts.history.slice(-16);
+  const contents = recent.map((m, i) => ({
+    role: m.role,
+    parts: [
+      ...(m.image && i === recent.length - 1 ? [{ inlineData: { mimeType: "image/jpeg", data: m.image } }] : []),
+      { text: m.text || "(photo)" },
+    ],
+  }));
 
   let lastError: unknown;
   let lastModel = "";
@@ -576,8 +587,14 @@ export async function chatAnswer(opts: { apiKey: string; history: ChatTurn[]; co
           config: { systemInstruction: system, temperature: 0.6, ...(withSearch ? { tools: [{ googleSearch: {} }] } : {}) },
         });
         if (res.promptFeedback?.blockReason) throw new AnalysisError(t("aiDeclined"));
-        const text = res.text?.trim();
+        let text = res.text?.trim();
         if (!text) throw new AnalysisError(t("aiNoAnswer"));
+        let log: string | undefined;
+        const marker = text.match(/\[\[\s*LOG\s*:\s*([\s\S]*?)\]\]/i);
+        if (marker) {
+          log = marker[1].trim().slice(0, 200) || undefined;
+          text = text.replace(marker[0], "").trim();
+        }
         const chunks = res.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
         const sources = chunks
           .map((c) => ({ title: c.web?.title ?? "", url: c.web?.uri ?? "" }))
@@ -585,7 +602,7 @@ export async function chatAnswer(opts: { apiKey: string; history: ChatTurn[]; co
           .filter((s, i, a) => a.findIndex((x) => x.url === s.url) === i)
           .slice(0, 4);
         writeStorage(MODEL_KEY, model);
-        return { text, sources };
+        return { text, sources, log };
       } catch (err) {
         if (err instanceof AnalysisError) throw err;
         console.warn("[FoodChecker] chat failed", model, withSearch, err);
