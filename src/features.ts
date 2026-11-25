@@ -60,9 +60,17 @@ export function setFeatureSource(get: () => Settings) {
   source = get;
 }
 
-/** Every feature starts switched off; people turn on what they want in More → Features. */
+/** Every feature starts switched on; people can turn off what they don't want in More → Features. */
 export function featureOn(id: FeatureId, s: Settings = source()): boolean {
-  return s.features?.[id] === true;
+  return s.features?.[id] !== false;
+}
+
+/** One-time reset so everyone gets every feature switched on (returns true if it changed anything). */
+export function migrateFeatures(s: Settings): boolean {
+  if (s.featuresVersion === 2) return false;
+  setAllFeatures(s, true);
+  s.featuresVersion = 2;
+  return true;
 }
 
 export function setFeature(s: Settings, id: FeatureId, v: boolean) {

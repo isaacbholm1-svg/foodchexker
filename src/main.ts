@@ -2,7 +2,7 @@ import "./style.css";
 import { analyzeMeal, AnalysisError, suggestIdeas, type Analysis, type FoodItem, type Idea } from "./ai";
 import { renderChat } from "./chat";
 import { registerMorePage, renderMore, openMorePage, currentMorePage } from "./more";
-import { FEATURES, featureOn, setAllFeatures, setFeature, setFeatureSource, type FeatureId } from "./features";
+import { FEATURES, featureOn, migrateFeatures, setAllFeatures, setFeature, setFeatureSource, type FeatureId } from "./features";
 import { renderRecipes, renderShopping } from "./recipes";
 import { renderPlanner } from "./planner";
 import { budgetBonus, burnedOn, renderExercise, workoutsOn } from "./exercise";
@@ -61,6 +61,7 @@ const ACCENTS: Settings["accent"][] = ["green", "blue", "purple", "pink", "orang
 
 let settings = loadSettings();
 setFeatureSource(() => settings);
+if (migrateFeatures(settings)) saveSettings(settings);
 setLanguage(settings.language ?? detectLanguage());
 let viewDate = localDate();
 let tab: "today" | "chat" | "stats" | "more" | "settings" = "today";
