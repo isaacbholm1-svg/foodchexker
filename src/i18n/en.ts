@@ -292,6 +292,8 @@ const en = {
     loadCount: "Counting calories…",
     loadAlmost: "Almost done…",
     tagline: "Snap it. Know it. Feel great.",
+    featuresAllOff: "Turn everything off",
+    featuresTip: "🧩 Want more? Turn on features like water, chat, recipes and exercise in More → Features.",
     report: "Weekly report",
     reportDesc: "Your last 7 days + an AI coach summary",
     repRange: "The last 7 days, including today",

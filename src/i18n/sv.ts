@@ -283,6 +283,8 @@ const sv: Dict = {
     loadCount: "Räknar kalorier…",
     loadAlmost: "Nästan klart…",
     tagline: "Fota. Koll. Må bra.",
+    featuresAllOff: "Stäng av allt",
+    featuresTip: "🧩 Vill du ha mer? Slå på funktioner som vatten, chatt, recept och träning under Mer → Funktioner.",
     report: "Veckorapport",
     reportDesc: "Dina senaste 7 dagar + en sammanfattning från AI-coachen",
     repRange: "De senaste 7 dagarna, i dag inräknat",

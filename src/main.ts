@@ -2,7 +2,7 @@ import "./style.css";
 import { analyzeMeal, AnalysisError, suggestIdeas, type Analysis, type FoodItem, type Idea } from "./ai";
 import { renderChat } from "./chat";
 import { registerMorePage, renderMore, openMorePage, currentMorePage } from "./more";
-import { FEATURES, featureOn, setFeature, setFeatureSource, type FeatureId } from "./features";
+import { FEATURES, featureOn, setAllFeatures, setFeature, setFeatureSource, type FeatureId } from "./features";
 import { renderRecipes, renderShopping } from "./recipes";
 import { renderPlanner } from "./planner";
 import { budgetBonus, burnedOn, renderExercise, workoutsOn } from "./exercise";
@@ -178,7 +178,7 @@ function renderToday() {
 
   // --- motivation ---
   let moti: HTMLElement | null = null;
-  if (settings.showMotivation && settings.profile) {
+  if (featureOn("motivation") && settings.profile) {
     const m = motivation(
       {
         name: settings.profile.name,
@@ -189,7 +189,7 @@ function renderToday() {
         protein: totals.protein_g,
         proteinTarget: tg.protein,
         waterMl,
-        waterTarget: settings.showWater ? tg.waterMl : 0,
+        waterTarget: featureOn("water") ? tg.waterMl : 0,
         streak,
         entriesToday: entries.length,
         isToday,
@@ -325,7 +325,7 @@ function renderToday() {
 
   // --- water ---
   let waterCard: HTMLElement | null = null;
-  if (settings.showWater) {
+  if (featureOn("water")) {
     const glasses = Math.round(waterMl / settings.glassMl);
     const goalGlasses = Math.max(1, Math.round(tg.waterMl / settings.glassMl));
     waterCard = h(
@@ -401,7 +401,8 @@ function renderToday() {
   root.replaceChildren(
     ...[header, moti, featureOn("checkin") && isToday ? checkinPrompt(viewDate, () => { checkBadges(); render(); }) : null, summary, add, sugg, waterCard, exerciseCard(), log,
       featureOn("shareday") && entries.length ? h("button", { class: "btn wide ghost share-day-btn", onclick: () => shareToday() }, `📤 ${t("shareDay")}`) : null,
-      tipCard, h("p", { class: "footer-note" }, t("aiDisclaimer"))].filter((n): n is HTMLElement => !!n),
+      tipCard,
+      FEATURES.every((f) => !featureOn(f.id)) ? h("button", { class: "card tip-card features-tip", onclick: () => { openMorePage("features"); setTab("more"); } }, h("span", { class: "tip-body" }, t("featuresTip"))) : null, h("p", { class: "footer-note" }, t("aiDisclaimer"))].filter((n): n is HTMLElement => !!n),
   );
   root.classList.toggle("stagger", animateIn);
   animateIn = false;
@@ -450,7 +451,7 @@ function suggestionsCard(ctx: { entries: Entry[]; totals: ReturnType<typeof sum>
   if (growth && left > 500 && hour >= 15) push(t("sug_gain"));
   if (tg.fiber - ctx.fiber > 8 && hour >= 13) push(t("sug_fiber", { n: round(tg.fiber - ctx.fiber) }));
   if (ctx.sugar > (tg.calories * 0.1) / 4) push(t("sug_sugar"));
-  if (settings.showWater && hour >= 12 && ctx.waterMl < tg.waterMl) push(t("sug_water", { n: fmtWater(tg.waterMl - ctx.waterMl, u) }));
+  if (featureOn("water") && hour >= 12 && ctx.waterMl < tg.waterMl) push(t("sug_water", { n: fmtWater(tg.waterMl - ctx.waterMl, u) }));
   if (left > 400) push(t("sug_meal_left", { n: fmtEnergy(left, u) }));
   else if (left > 150) push(t("sug_snack"));
   if (!tips.length && ctx.entries.length) push(t("sug_all_good"));
@@ -1457,7 +1458,12 @@ function renderFeatures(root: HTMLElement) {
           : []),
       ),
     ),
-    h("button", { class: "btn wide ghost", onclick: () => { settings.features = {}; settings.showWater = true; settings.showMotivation = true; save(); applyFeatureTabs(); renderFeatures(root); } }, t("featuresAllOn")),
+    h(
+      "div",
+      { class: "recipe-actions" },
+      h("button", { class: "btn ghost", onclick: () => { setAllFeatures(settings, true); save(); applyFeatureTabs(); renderFeatures(root); } }, t("featuresAllOn")),
+      h("button", { class: "btn ghost", onclick: () => { setAllFeatures(settings, false); save(); applyFeatureTabs(); renderFeatures(root); } }, t("featuresAllOff")),
+    ),
   );
 }
 registerMorePage({ id: "settings", emoji: "⚙️", color: "#7d8590", title: "settings", desc: "settingsDesc", section: "app", open: () => setTab("settings") });

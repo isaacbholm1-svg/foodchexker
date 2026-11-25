@@ -111,6 +111,8 @@ const nb: Dict = {
     aiOffline: "Fikk ikke kontakt med KI-tjenesten. Sjekk internettforbindelsen.", meal: "Måltid", food: "Mat", oneServing: "1 porsjon",
     loadFind: "Finner matvarene…", loadPortion: "Anslår porsjonene…", loadCount: "Teller kalorier…", loadAlmost: "Nesten ferdig…",
     tagline: "Ta bilde. Få oversikt. Føl deg bra.",
+    featuresAllOff: "Slå av alt",
+    featuresTip: "🧩 Vil du ha mer? Slå på funksjoner som vann, chat, oppskrifter og trening under Mer → Funksjoner.",
     report: "Ukesrapport",
     reportDesc: "De siste 7 dagene dine + en oppsummering fra KI-coachen",
     repRange: "De siste 7 dagene, i dag medregnet",
