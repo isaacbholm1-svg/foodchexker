@@ -110,6 +110,8 @@ const da: Dict = {
     aiOffline: "Kunne ikke få forbindelse til AI-tjenesten. Tjek din internetforbindelse.", meal: "Måltid", food: "Mad", oneServing: "1 portion",
     loadFind: "Finder fødevarerne…", loadPortion: "Vurderer portionerne…", loadCount: "Tæller kalorier…", loadAlmost: "Næsten færdig…",
     tagline: "Tag et billede. Få overblik. Få det godt.",
+    featuresAllOff: "Slå alt fra",
+    featuresTip: "🧩 Vil du have mere? Slå funktioner som vand, chat, opskrifter og træning til under Mere → Funktioner.",
     report: "Ugerapport",
     reportDesc: "Dine seneste 7 dage + en opsummering fra AI-coachen",
     repRange: "De seneste 7 dage, i dag medregnet",

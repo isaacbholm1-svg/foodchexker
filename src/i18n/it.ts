@@ -110,6 +110,8 @@ const it: Dict = {
     aiOffline: "Impossibile raggiungere il servizio IA. Controlla la connessione a Internet.", meal: "Pasto", food: "Alimento", oneServing: "1 porzione",
     loadFind: "Riconosco gli alimenti…", loadPortion: "Stimo le porzioni…", loadCount: "Conto le calorie…", loadAlmost: "Quasi fatto…",
     tagline: "Fotografa. Scopri. Stai bene.", aiPowered: "Basato sull’IA", ideasTitle: "Idee per te", ideasLoading: "Sto pensando a qualche idea…", newIdeas: "Nuove idee",
+    featuresAllOff: "Disattiva tutto",
+    featuresTip: "🧩 Vuoi di più? Attiva funzioni come acqua, chat, ricette e allenamento in Altro → Funzioni.",
     report: "Resoconto settimanale",
     reportDesc: "I tuoi ultimi 7 giorni + un riepilogo del coach IA",
     repRange: "Gli ultimi 7 giorni, oggi compreso",

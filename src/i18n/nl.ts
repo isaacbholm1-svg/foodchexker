@@ -110,6 +110,8 @@ const nl: Dict = {
     aiOffline: "De AI-dienst is niet bereikbaar. Controleer je internetverbinding.", meal: "Maaltijd", food: "Voedingsmiddel", oneServing: "1 portie",
     loadFind: "Voedingsmiddelen zoeken…", loadPortion: "Porties schatten…", loadCount: "Calorieën tellen…", loadAlmost: "Bijna klaar…",
     tagline: "Foto. Inzicht. Goed gevoel.", aiPowered: "AI-gestuurd", ideasTitle: "Ideeën voor jou", ideasLoading: "Ideeën bedenken…", newIdeas: "Nieuwe ideeën",
+    featuresAllOff: "Alles uitzetten",
+    featuresTip: "🧩 Meer nodig? Zet functies zoals water, chat, recepten en sporten aan via Meer → Functies.",
     report: "Weekrapport",
     reportDesc: "Je laatste 7 dagen + een samenvatting van de AI-coach",
     repRange: "De afgelopen 7 dagen, vandaag meegerekend",

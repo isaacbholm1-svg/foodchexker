@@ -110,6 +110,8 @@ const de: Dict = {
     aiOffline: "Der KI-Dienst ist nicht erreichbar. Prüfe deine Internetverbindung.", meal: "Mahlzeit", food: "Lebensmittel", oneServing: "1 Portion",
     loadFind: "Lebensmittel werden erkannt…", loadPortion: "Portionen werden geschätzt…", loadCount: "Kalorien werden gezählt…", loadAlmost: "Fast fertig…",
     tagline: "Fotografieren. Wissen. Wohlfühlen.", aiPowered: "KI-gestützt", ideasTitle: "Ideen für dich", ideasLoading: "Ideen werden gesammelt…", newIdeas: "Neue Ideen",
+    featuresAllOff: "Alles ausschalten",
+    featuresTip: "🧩 Mehr gewünscht? Schalte Funktionen wie Wasser, Chat, Rezepte und Training unter Mehr → Funktionen ein.",
     report: "Wochenbericht",
     reportDesc: "Deine letzten 7 Tage + eine Zusammenfassung vom KI-Coach",
     repRange: "Die letzten 7 Tage, heute eingeschlossen",

@@ -1,3 +1,4 @@
+import { featureOn } from "./features";
 // Achievements (worked out from the saved data) and the daily score.
 import { t, type StringKey } from "./i18n";
 import { allWorkouts } from "./exercise";
@@ -152,7 +153,7 @@ export function dayScore(entries: Entry[], waterMl: number, settings: Settings):
     { key: "score_cal", points: Math.round(40 * Math.max(0, 1 - Math.max(0, off - 0.05) / 0.35)), max: 40 },
     { key: "score_protein", points: Math.round(25 * Math.min(1, protein / (tg.protein || 1))), max: 25 },
     { key: "score_fiber", points: Math.round(15 * Math.min(1, fiber / (tg.fiber || 1))), max: 15 },
-    { key: "score_water", points: settings.showWater ? Math.round(10 * Math.min(1, waterMl / (tg.waterMl || 1))) : 10, max: 10 },
+    { key: "score_water", points: featureOn("water", settings) ? Math.round(10 * Math.min(1, waterMl / (tg.waterMl || 1))) : 10, max: 10 },
     { key: "score_sugar", points: sugar <= sugarLimit ? 10 : Math.round(10 * Math.max(0, 1 - (sugar - sugarLimit) / sugarLimit)), max: 10 },
   ];
   return { score: parts.reduce((a, p) => a + p.points, 0), parts };

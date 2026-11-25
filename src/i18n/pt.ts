@@ -111,6 +111,8 @@ const pt: Dict = {
     aiOffline: "Não foi possível acessar o serviço de IA. Verifique sua internet.", meal: "Refeição", food: "Alimento", oneServing: "1 porção",
     loadFind: "Identificando os alimentos…", loadPortion: "Estimando as porções…", loadCount: "Contando as calorias…", loadAlmost: "Quase pronto…",
     tagline: "Fotografe. Entenda. Sinta-se bem.", aiPowered: "Com IA", ideasTitle: "Ideias para você", ideasLoading: "Pensando em ideias…", newIdeas: "Novas ideias",
+    featuresAllOff: "Desativar tudo",
+    featuresTip: "🧩 Quer mais? Ative recursos como água, chat, receitas e exercício em Mais → Recursos.",
     report: "Relatório semanal",
     reportDesc: "Seus últimos 7 dias + um resumo do coach com IA",
     repRange: "Os últimos 7 dias, incluindo hoje",

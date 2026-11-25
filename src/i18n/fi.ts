@@ -283,6 +283,8 @@ const fi: Dict = {
     loadCount: "Lasketaan kaloreita…",
     loadAlmost: "Melkein valmista…",
     tagline: "Kuvaa. Tiedä. Voi hyvin.",
+    featuresAllOff: "Poista kaikki käytöstä",
+    featuresTip: "🧩 Haluatko lisää? Ota käyttöön esimerkiksi vesi, chat, reseptit ja liikunta kohdassa Lisää → Ominaisuudet.",
     report: "Viikkoraportti",
     reportDesc: "Viimeiset 7 päivääsi + tekoälyvalmentajan yhteenveto",
     repRange: "Viimeiset 7 päivää tänään mukaan lukien",

@@ -60,14 +60,15 @@ export function setFeatureSource(get: () => Settings) {
   source = get;
 }
 
+/** Every feature starts switched off; people turn on what they want in More → Features. */
 export function featureOn(id: FeatureId, s: Settings = source()): boolean {
-  if (id === "water") return s.showWater;
-  if (id === "motivation") return s.showMotivation;
-  return s.features?.[id] !== false;
+  return s.features?.[id] === true;
 }
 
 export function setFeature(s: Settings, id: FeatureId, v: boolean) {
-  if (id === "water") s.showWater = v;
-  else if (id === "motivation") s.showMotivation = v;
-  else s.features = { ...s.features, [id]: v };
+  s.features = { ...s.features, [id]: v };
+}
+
+export function setAllFeatures(s: Settings, v: boolean) {
+  s.features = Object.fromEntries(FEATURES.map((f) => [f.id, v]));
 }
