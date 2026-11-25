@@ -4,6 +4,12 @@ import { locale, t } from "./i18n";
 import { featureOn } from "./features";
 import { persisted } from "./store";
 import { h, toast } from "./ui";
+import { classifyAisles } from "./ai";
+import { guessSection, isKnown, layout, rememberSections, SECTION_IDS, SECTIONS, sectionOrder, type Section } from "./aisles";
+
+const SPARKLE =
+  '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M10 2.5c.45 4.1 2.4 6.05 6.5 6.5-4.1.45-6.05 2.4-6.5 6.5-.45-4.1-2.4-6.05-6.5-6.5 4.1-.45 6.05-2.4 6.5-6.5Z"/><path fill="currentColor" d="M18.5 13.5c.25 2.25 1.25 3.25 3.5 3.5-2.25.25-3.25 1.25-3.5 3.5-.25-2.25-1.25-3.25-3.5-3.5 2.25-.25 3.25-1.25 3.5-3.5Z"/></svg>';
+let sorting = false;
 
 export interface Recipe {
   id: string;
@@ -105,7 +111,7 @@ export function renderRecipes(root: HTMLElement, deps: { logText: (text: string)
   draw();
 }
 
-export function renderShopping(root: HTMLElement) {
+export function renderShopping(root: HTMLElement, deps: { apiKey: () => string } = { apiKey: () => "" }) {
   const input = h("input", { type: "text", placeholder: t("shoppingPh"), autocomplete: "off", enterkeyhint: "done" });
   const listBox = h("div", { class: "shop-list" });
   const addItem = () => {
@@ -121,8 +127,67 @@ export function renderShopping(root: HTMLElement) {
     e.preventDefault();
     addItem();
   });
+  const sortBtn = h("button", { class: "ai-sort-btn", "aria-pressed": "false" });
+  sortBtn.addEventListener("click", () => {
+    const l = layout.get();
+    layout.set({ ...l, store: l.store === "off" ? "ksupermarket" : "off" });
+    draw();
+  });
+  // Ask the AI about items the built-in word list doesn't know (once per item).
+  const classifyUnknown = async () => {
+    const key = deps.apiKey();
+    if (!key || sorting || !sectionOrder()) return;
+    const unknown = [...new Set(shopping.get().filter((i) => !i.done && !isKnown(i.text) && !guessSection(i.text)).map((i) => i.text))].slice(0, 40);
+    if (!unknown.length) return;
+    sorting = true;
+    draw();
+    try {
+      const map = await classifyAisles(key, unknown, SECTION_IDS);
+      rememberSections(Object.fromEntries(unknown.map((u) => [u, (map[u] as Section) ?? "other"])));
+    } catch {
+      rememberSections(Object.fromEntries(unknown.map((u) => [u, "other" as Section])));
+    } finally {
+      sorting = false;
+      if (root.isConnected) draw();
+    }
+  };
+  const row = (it: ShopItem) => {
+    const cb = h("input", { type: "checkbox", class: "shop-check", checked: it.done, "aria-label": it.text });
+    cb.addEventListener("change", () => {
+      shopping.set(shopping.get().map((x) => (x.id === it.id ? { ...x, done: cb.checked } : x)));
+      setTimeout(draw, 250);
+    });
+    return h(
+      "label",
+      { class: `shop-item${it.done ? " done" : ""}` },
+      cb,
+      h("span", { class: "shop-text" }, it.text),
+      h("button", { class: "icon-btn remove", "aria-label": t("delete"), onclick: (e: Event) => { e.preventDefault(); shopping.set(shopping.get().filter((x) => x.id !== it.id)); draw(); } }, "×"),
+    );
+  };
   const draw = () => {
     const items = shopping.get();
+    const order = sectionOrder();
+    sortBtn.innerHTML = SPARKLE;
+    sortBtn.append(` ${t("aiSort")}${sorting ? " …" : ""}`);
+    sortBtn.setAttribute("aria-pressed", String(!!order));
+    sortBtn.classList.toggle("on", !!order);
+    if (order && items.length) {
+      const open = items.filter((i) => !i.done);
+      const groups = order
+        .map((sec) => ({ sec, list: open.filter((i) => (guessSection(i.text) ?? "other") === sec) }))
+        .filter((g) => g.list.length);
+      const done = items.filter((i) => i.done);
+      listBox.replaceChildren(
+        ...groups.flatMap((g) => {
+          const info = SECTIONS.find((x) => x.id === g.sec)!;
+          return [h("div", { class: "shop-sec" }, `${info.emoji} ${t(info.label)}`), ...g.list.map(row)];
+        }),
+        ...(done.length ? [h("div", { class: "shop-sec muted" }, "✓"), ...done.map(row)] : []),
+      );
+      void classifyUnknown();
+      return;
+    }
     listBox.replaceChildren(
       ...(items.length
         ? items
@@ -164,7 +229,7 @@ export function renderShopping(root: HTMLElement) {
   };
   root.replaceChildren(
     h("h1", { class: "page-title" }, t("shopping")),
-    h("section", { class: "card" }, form, listBox),
+    h("section", { class: "card" }, form, h("div", { class: "shop-tools" }, sortBtn), listBox),
     h(
       "div",
       { class: "recipe-actions" },

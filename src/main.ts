@@ -4,6 +4,7 @@ import { renderChat } from "./chat";
 import { registerMorePage, renderMore, openMorePage, currentMorePage } from "./more";
 import { FEATURES, featureOn, migrateFeatures, setAllFeatures, setFeature, setFeatureSource, type FeatureId } from "./features";
 import { renderRecipes, renderShopping } from "./recipes";
+import { layout as storeLayout, SECTIONS, sectionOrder, STORE_ORDER, type StoreType } from "./aisles";
 import { renderPlanner } from "./planner";
 import { budgetBonus, burnedOn, renderExercise, workoutsOn } from "./exercise";
 import { myFoods, renderMyFoods, type MyFood } from "./myfoods";
@@ -1240,9 +1241,73 @@ function renderSettings() {
     appearanceCard,
     h("button", { class: "card more-profile features-link", onclick: () => { openMorePage("features"); setTab("more"); } }, h("span", { class: "more-icon", style: "--tile:#e0a526", "aria-hidden": "true" }, "🧩"), h("span", { class: "more-text" }, h("span", { class: "more-title" }, t("features")), h("span", { class: "more-desc" }, t("featuresDesc"))), h("span", { class: "more-chev", "aria-hidden": "true" }, "›")),
     aiCard,
+    ...(featureOn("shopping") ? [aiSortCard()] : []),
     dataCard,
     about,
   );
+}
+
+function aiSortCard(): HTMLElement {
+  const card = h("section", { class: "card settings-card ai-sort-card" });
+  const draw = () => {
+    const l = storeLayout.get();
+    const select = h(
+      "select",
+      { class: "store-select", "aria-label": t("aiSortStore") },
+      ...([
+        ["off", t("storeOff")],
+        ["kmarket", "K-Market"],
+        ["ksupermarket", "K-Supermarket"],
+        ["kcitymarket", "K-Citymarket"],
+        ["custom", t("storeCustom")],
+      ] as [StoreType, string][]).map(([v, label]) => h("option", { value: v, selected: l.store === v }, label)),
+    );
+    select.addEventListener("change", () => {
+      const store = select.value as StoreType;
+      const cur = sectionOrder();
+      storeLayout.set({ store, custom: store === "custom" && !l.custom.length ? (cur ?? STORE_ORDER.ksupermarket) : l.custom });
+      draw();
+    });
+    const order = sectionOrder();
+    const move = (i: number, d: number) => {
+      const o = [...(sectionOrder() ?? [])];
+      const j = i + d;
+      if (j < 0 || j >= o.length) return;
+      [o[i], o[j]] = [o[j], o[i]];
+      storeLayout.set({ store: "custom", custom: o });
+      draw();
+    };
+    const badge = h("span", { class: "ai-badge" });
+    badge.innerHTML = SPARKLE_SVG;
+    badge.append(t("aiSort"));
+    card.replaceChildren(
+      h("h3", {}, badge),
+      h("p", { class: "muted small" }, t("aiSortHint")),
+      unitRow(t("aiSortStore"), select),
+      ...(order
+        ? [
+            h("div", { class: "field-label" }, t("sectionOrder")),
+            h("p", { class: "muted small" }, t("sectionOrderHint")),
+            h(
+              "ol",
+              { class: "sec-order" },
+              ...order.map((sec, i) => {
+                const info = SECTIONS.find((x) => x.id === sec)!;
+                return h(
+                  "li",
+                  {},
+                  h("span", { class: "sec-name" }, `${info.emoji} ${t(info.label)}`),
+                  h("button", { class: "icon-btn", "aria-label": t("moveUp"), disabled: i === 0, onclick: () => move(i, -1) }, "↑"),
+                  h("button", { class: "icon-btn", "aria-label": t("moveDown"), disabled: i === order.length - 1, onclick: () => move(i, 1) }, "↓"),
+                );
+              }),
+            ),
+          ]
+        : []),
+    );
+  };
+  draw();
+  return card;
 }
 
 function languageCard() {
@@ -1415,7 +1480,7 @@ registerMorePage({
   visible: () => featureOn("recipes"),
   render: (root) => renderRecipes(root, { logText: (text) => runAnalysis({ text }), goChat: () => setTab("chat") }),
 });
-registerMorePage({ id: "shopping", emoji: "🛒", color: "#2f9e5e", title: "shopping", desc: "shoppingDesc", section: "tools", visible: () => featureOn("shopping"), render: (root) => renderShopping(root) });
+registerMorePage({ id: "shopping", emoji: "🛒", color: "#2f9e5e", title: "shopping", desc: "shoppingDesc", section: "tools", visible: () => featureOn("shopping"), render: (root) => renderShopping(root, { apiKey: () => settings.apiKey }) });
 registerMorePage({ id: "features", emoji: "🧩", color: "#e0a526", title: "features", desc: "featuresDesc", section: "app", render: (root) => renderFeatures(root) });
 
 function renderFeatures(root: HTMLElement) {

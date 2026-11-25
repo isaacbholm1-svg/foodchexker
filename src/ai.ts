@@ -534,6 +534,32 @@ export async function weeklyReport(apiKey: string, summary: string): Promise<Wee
   return r;
 }
 
+// ---------------- shopping list store sections ----------------
+
+/** Puts shopping list items into grocery store sections (any language). */
+export async function classifyAisles(apiKey: string, items: string[], sections: string[]): Promise<Record<string, string>> {
+  const schema = {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        items: { type: "object", properties: { text: { type: "string" }, section: { type: "string", enum: sections } }, required: ["text", "section"] },
+      },
+    },
+    required: ["items"],
+  };
+  const system = "You sort shopping list items into the section of a Finnish grocery store (K-Market, K-Supermarket, K-Citymarket) where they are found. Eggs and plant milks go in dairy. Return every item with its exact original text.";
+  const raw = await callGemini(apiKey, [{ text: `Sections: ${sections.join(", ")}\nItems:\n${items.map((i) => `- ${i}`).join("\n")}` }], system, schema);
+  const out: Record<string, string> = {};
+  try {
+    const d = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    for (const it of Array.isArray(d.items) ? d.items : []) if (typeof it?.text === "string" && sections.includes(it.section)) out[it.text] = it.section;
+  } catch {
+    /* ignore: keyword guesses are used instead */
+  }
+  return out;
+}
+
 // ---------------- food chat ----------------
 
 export interface ChatTurn {
