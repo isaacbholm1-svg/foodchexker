@@ -121,7 +121,7 @@ function setTab(t: typeof tab) {
 
 function render() {
   if (tab === "today") renderToday();
-  else if (tab === "chat") renderChat($("view-chat"), { apiKey: settings.apiKey, context: chatContext, openSettings: () => setTab("settings") });
+  else if (tab === "chat") renderChat($("view-chat"), { apiKey: settings.apiKey, context: chatContext, openSettings: () => setTab("settings"), logFood: (text) => { viewDate = localDate(); runAnalysis({ text }); } });
   else if (tab === "stats") renderStats($("view-stats"), settings, statsRange, (r) => { statsRange = r; render(); }, openWeightDialog);
   else if (tab === "more") renderMore($("view-more"), () => null, render);
   else renderSettings();
