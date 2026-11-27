@@ -1295,3 +1295,44 @@ input[type="search"] { width: 100%; border: 1px solid var(--line); background: v
 .sec-order li { display: flex; align-items: center; gap: 4px; background: var(--bg); border-radius: 10px; padding: 4px 4px 4px 12px; }
 .sec-name { flex: 1; min-width: 0; font-size: 15px; }
 .sec-order .icon-btn:disabled { opacity: 0.25; }
+
+/* ---------- customize ---------- */
+.sw-red { background: #c8362f; }
+.sw-gold { background: #b88a0a; }
+.sw-indigo { background: #4b4fc4; }
+.sw-graphite { background: #4d5560; }
+:root[data-accent="red"] { --accent-l: #c8362f; --accent-d: #f0746a; }
+:root[data-accent="gold"] { --accent-l: #9a7206; --accent-d: #e8bd3a; }
+:root[data-accent="indigo"] { --accent-l: #4b4fc4; --accent-d: #8b8ef0; }
+:root[data-accent="graphite"] { --accent-l: #3d444d; --accent-d: #b7c0ca; }
+
+/* Text size: scale the pages (not fixed bars), and chat bubbles. */
+:root[data-text="s"] :is(#view-today, #view-stats, #view-more, #view-settings) { zoom: 0.92; }
+:root[data-text="l"] :is(#view-today, #view-stats, #view-more, #view-settings) { zoom: 1.1; }
+:root[data-text="xl"] :is(#view-today, #view-stats, #view-more, #view-settings) { zoom: 1.22; }
+:root[data-text="s"] .msg { zoom: 0.92; }
+:root[data-text="l"] .msg { zoom: 1.1; }
+:root[data-text="xl"] .msg { zoom: 1.22; }
+
+/* Pure black in dark mode (OLED). */
+:root[data-theme="dark"][data-black="true"] { --bg: #000; --card: #121314; --line: #26292d; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-black="true"] { --bg: #000; --card: #121314; --line: #26292d; }
+}
+
+/* Compact: tighter cards. */
+:root[data-compact="true"] .view .card { padding: 12px 14px; margin-bottom: 8px; }
+:root[data-compact="true"] .view .page-title { margin-bottom: 8px; }
+
+/* Animations off. */
+:root[data-motion="false"] *, :root[data-motion="false"] *::before, :root[data-motion="false"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0s !important;
+  transition-duration: 0.001ms !important;
+}
+
+.sec-order li.off { opacity: 0.45; }
+.meal-name-row { display: flex; gap: 8px; margin-top: 8px; }
+.meal-name-row input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.meal-name-row .meal-emoji-in { flex: 0 0 56px; text-align: center; }
+.macro-head { gap: 6px; }

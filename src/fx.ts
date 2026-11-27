@@ -1,12 +1,14 @@
 // Visual effects: confetti bursts and numbers that count up. All respect "Reduce Motion".
 
-const reduced = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+import { custom } from "./custom";
+
+const reduced = () => !custom().motion || (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
 
 const COLORS = ["#2f8f5b", "#4cbf80", "#f2b134", "#e8615a", "#5b8def", "#b06ad9", "#ff9f43"];
 
 /** A burst of confetti from a point (defaults to the top centre of the screen). */
 export function confetti(opts: { x?: number; y?: number; count?: number } = {}) {
-  if (reduced()) return;
+  if (reduced() || !custom().confetti) return;
   const canvas = document.createElement("canvas");
   canvas.className = "confetti";
   const dpr = Math.min(2, window.devicePixelRatio || 1);
