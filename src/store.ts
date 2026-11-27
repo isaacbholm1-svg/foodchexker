@@ -66,7 +66,7 @@ export interface Settings {
   targets: Targets;
   units: Units;
   theme: "auto" | "light" | "dark";
-  accent: "green" | "blue" | "purple" | "pink" | "orange" | "teal";
+  accent: "green" | "blue" | "purple" | "pink" | "orange" | "teal" | "red" | "gold" | "indigo" | "graphite";
   showMotivation: boolean;
   showWater: boolean;
   glassMl: number;

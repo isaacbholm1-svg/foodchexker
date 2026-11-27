@@ -1,6 +1,8 @@
 import "./style.css";
 import { analyzeMeal, AnalysisError, suggestIdeas, type Analysis, type FoodItem, type Idea } from "./ai";
 import { renderChat } from "./chat";
+import { applyCustom, custom, mealEmoji, mealName } from "./custom";
+import { renderCustomize } from "./customize";
 import { registerMorePage, renderMore, openMorePage, currentMorePage } from "./more";
 import { FEATURES, featureOn, migrateFeatures, setAllFeatures, setFeature, setFeatureSource, type FeatureId } from "./features";
 import { renderRecipes, renderShopping } from "./recipes";
@@ -57,8 +59,9 @@ import {
 import { $, download, h, segmented, toast, toggle } from "./ui";
 
 const MEALS: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
-const mealLabel = (m: MealType) => t(m === "snack" ? "snacks" : m);
-const ACCENTS: Settings["accent"][] = ["green", "blue", "purple", "pink", "orange", "teal"];
+const mealLabel = (m: MealType) => mealName(m) || t(m === "snack" ? "snacks" : m);
+const mealShort = (m: MealType) => mealName(m) || (m === "snack" ? t("snack") : mealLabel(m));
+const ACCENTS: Settings["accent"][] = ["green", "teal", "blue", "indigo", "purple", "pink", "red", "orange", "gold", "graphite"];
 
 let settings = loadSettings();
 setFeatureSource(() => settings);
@@ -232,8 +235,10 @@ function renderToday() {
   const ringFill = ringSvg.querySelector<SVGCircleElement>(".ring-fill")!;
   requestAnimationFrame(() => requestAnimationFrame(() => (ringFill.style.strokeDashoffset = String(C * (1 - frac)))));
 
-  const ringNum = h("div", { class: fmtEnergy(Math.abs(left), u, false).length > 5 ? "ring-num long" : "ring-num" });
-  countUp(ringNum, same ? Math.abs(lastShown.left) : Math.abs(budgetCal), Math.abs(left), (n) => fmtEnergy(n, u, false));
+  const showEaten = custom().ring === "eaten";
+  const ringNum = h("div", { class: fmtEnergy(showEaten ? totals.calories : Math.abs(left), u, false).length > 5 ? "ring-num long" : "ring-num" });
+  if (showEaten) countUp(ringNum, same ? lastShown.eaten : 0, totals.calories, (n) => fmtEnergy(n, u, false));
+  else countUp(ringNum, same ? Math.abs(lastShown.left) : Math.abs(budgetCal), Math.abs(left), (n) => fmtEnergy(n, u, false));
   const eatenNum = h("span", {});
   countUp(eatenNum, same ? lastShown.eaten : 0, totals.calories, (n) => fmtEnergy(n, u, false));
 
@@ -258,11 +263,13 @@ function renderToday() {
     h(
       "div",
       { class: "summary" },
-      h("div", { class: "ring-wrap" }, ringSvg, h("div", { class: "ring-text" }, ringNum, h("div", { class: "ring-sub" }, `${u.energy} ${left < 0 ? t("over") : t("left")}`))),
+      h("div", { class: "ring-wrap" }, ringSvg, h("div", { class: "ring-text" }, ringNum, h("div", { class: "ring-sub" }, `${u.energy} ${showEaten ? t("ringEatenSub") : left < 0 ? t("over") : t("left")}`))),
       h(
         "div",
         { class: "summary-side" },
-        h("div", { class: "eaten" }, eatenNum, ` / ${fmtEnergy(budgetCal, u)}`),
+        showEaten
+          ? h("div", { class: "eaten" }, `${fmtEnergy(Math.abs(left), u)} ${left < 0 ? t("over") : t("left")}`)
+          : h("div", { class: "eaten" }, eatenNum, ` / ${fmtEnergy(budgetCal, u)}`),
         bonus > 0 ? h("div", { class: "muted small budget-plus" }, `🏃 ${t("budgetPlus", { kcal: fmtEnergy(bonus, u) })}`) : null,
         macro(t("protein"), "protein", totals.protein_g, tg.protein),
         macro(t("carbs"), "carbs", totals.carbs_g, tg.carbs),
@@ -379,7 +386,7 @@ function renderToday() {
         h(
           "div",
           { class: "meal-head" },
-          h("h3", {}, `${MEAL_EMOJI[meal]} ${mealLabel(meal)}`),
+          h("h3", {}, `${mealEmoji(meal)} ${mealLabel(meal)}`),
           h("span", { class: "muted" }, list.length ? fmtEnergy(kcal, u) : ""),
           h("button", { class: "add-mini", "aria-label": t("addTo", { meal: mealLabel(meal) }), onclick: () => openAddSheet(meal) }, "+"),
         ),
@@ -401,9 +408,17 @@ function renderToday() {
   );
 
   root.replaceChildren(
-    ...[header, moti, featureOn("checkin") && isToday ? checkinPrompt(viewDate, () => { checkBadges(); render(); }) : null, summary, add, sugg, waterCard, exerciseCard(), log,
-      featureOn("shareday") && entries.length ? h("button", { class: "btn wide ghost share-day-btn", onclick: () => shareToday() }, `📤 ${t("shareDay")}`) : null,
-      tipCard,
+    ...[header,
+      ...custom().order.flatMap((id): (HTMLElement | null)[] => {
+        if (id === "motivation") return [moti, featureOn("checkin") && isToday ? checkinPrompt(viewDate, () => { checkBadges(); render(); }) : null];
+        if (id === "summary") return [summary];
+        if (id === "add") return [add];
+        if (id === "suggestions") return [sugg];
+        if (id === "water") return [waterCard];
+        if (id === "exercise") return [exerciseCard()];
+        if (id === "meals") return [log, featureOn("shareday") && entries.length ? h("button", { class: "btn wide ghost share-day-btn", onclick: () => shareToday() }, `📤 ${t("shareDay")}`) : null];
+        return [tipCard];
+      }),
       FEATURES.every((f) => !featureOn(f.id)) ? h("button", { class: "card tip-card features-tip", onclick: () => { openMorePage("features"); setTab("more"); } }, h("span", { class: "tip-body" }, t("featuresTip"))) : null, h("p", { class: "footer-note" }, t("aiDisclaimer"))].filter((n): n is HTMLElement => !!n),
   );
   root.classList.toggle("stagger", animateIn);
@@ -414,7 +429,6 @@ function renderToday() {
   }
 }
 
-const MEAL_EMOJI: Record<MealType, string> = { breakfast: "🍳", lunch: "🥪", dinner: "🍝", snack: "🍎" };
 
 function goDay(delta: number) {
   const next = addDays(viewDate, delta);
@@ -595,7 +609,7 @@ function openQuickAdd(meal?: MealType) {
     h("label", { class: "field" }, h("span", {}, t("quickName")), name),
     h("label", { class: "field" }, h("span", {}, t("quickKcal", { unit: u.energy })), kcal),
     h("div", { class: "field-row three" }, p.field, c.field, f.field),
-    segmented<MealType>(MEALS.map((m) => ({ value: m, label: m === "snack" ? t("snack") : mealLabel(m) })), chosen, (v) => (chosen = v), t("meal")),
+    segmented<MealType>(MEALS.map((m) => ({ value: m, label: mealShort(m) })), chosen, (v) => (chosen = v), t("meal")),
     h(
       "div",
       { class: "sheet-actions" },
@@ -717,7 +731,7 @@ function renderEntry(e: Entry) {
   const row = h(
     "button",
     { class: "entry", "aria-expanded": "false" },
-    e.thumb ? h("img", { class: "thumb", src: e.thumb, alt: "" }) : h("div", { class: "thumb placeholder" }, MEAL_EMOJI[e.meal]),
+    e.thumb ? h("img", { class: "thumb", src: e.thumb, alt: "" }) : h("div", { class: "thumb placeholder" }, mealEmoji(e.meal)),
     h("div", { class: "entry-main" }, h("div", { class: "entry-name" }, fav ? `⭐ ${e.name}` : e.name), h("div", { class: "muted small" }, `P ${round(tot.protein_g)} · C ${round(tot.carbs_g)} · F ${round(tot.fat_g)} g`)),
     h("div", { class: "entry-kcal" }, fmtEnergy(tot.calories, u, false)),
   );
@@ -925,7 +939,7 @@ function showReview(result: Analysis, opt: { thumb?: string; preview?: string; n
       ),
     ),
     totalsBox,
-    segmented<MealType>(MEALS.map((m) => ({ value: m, label: m === "snack" ? t("snack") : mealLabel(m) })), meal, (v) => (meal = v), t("meal")),
+    segmented<MealType>(MEALS.map((m) => ({ value: m, label: mealShort(m) })), meal, (v) => (meal = v), t("meal")),
     h(
       "div",
       { class: "sheet-actions" },
@@ -1164,22 +1178,6 @@ function renderSettings() {
     unitRow(t("water"), segmented([{ value: "ml", label: "ml / L" }, { value: "floz", label: "fl oz" }], u.water, (v) => { u.water = v; rerender(); }, t("water"))),
   );
 
-  // Appearance
-  const appearanceCard = section(
-    t("appearance"),
-    unitRow(t("theme"), segmented([{ value: "auto", label: t("themeAuto") }, { value: "light", label: t("themeLight") }, { value: "dark", label: t("themeDark") }], settings.theme, (v) => { settings.theme = v; applyTheme(); save(); }, t("theme"))),
-    h(
-      "div",
-      { class: "unit-row" },
-      h("span", {}, t("color")),
-      h(
-        "div",
-        { class: "swatches", role: "radiogroup", "aria-label": t("color") },
-        ...ACCENTS.map((a) => h("button", { class: `swatch sw-${a}`, role: "radio", "aria-checked": String(settings.accent === a), "aria-label": a, onclick: () => { settings.accent = a; applyTheme(); rerender(); } })),
-      ),
-    ),
-  );
-
   // AI key
   const keyInput = h("input", { type: "password", value: settings.apiKey, placeholder: "AIza...", autocomplete: "off" });
   const aiCard = section(
@@ -1238,12 +1236,32 @@ function renderSettings() {
     profileCard,
     targetsCard,
     unitsCard,
-    appearanceCard,
+    h("button", { class: "card more-profile features-link", onclick: () => { openMorePage("customize"); setTab("more"); } }, h("span", { class: "more-icon", style: "--tile:#c3407c", "aria-hidden": "true" }, "🎨"), h("span", { class: "more-text" }, h("span", { class: "more-title" }, t("customize")), h("span", { class: "more-desc" }, t("customizeDesc"))), h("span", { class: "more-chev", "aria-hidden": "true" }, "›")),
     h("button", { class: "card more-profile features-link", onclick: () => { openMorePage("features"); setTab("more"); } }, h("span", { class: "more-icon", style: "--tile:#e0a526", "aria-hidden": "true" }, "🧩"), h("span", { class: "more-text" }, h("span", { class: "more-title" }, t("features")), h("span", { class: "more-desc" }, t("featuresDesc"))), h("span", { class: "more-chev", "aria-hidden": "true" }, "›")),
     aiCard,
     ...(featureOn("shopping") ? [aiSortCard()] : []),
     dataCard,
     about,
+  );
+}
+
+function appearanceCard(): HTMLElement {
+  const rerender = () => { save(); render(); };
+  return h(
+    "section",
+    { class: "card settings-card" },
+    h("h3", {}, t("appearance")),
+    unitRow(t("theme"), segmented([{ value: "auto", label: t("themeAuto") }, { value: "light", label: t("themeLight") }, { value: "dark", label: t("themeDark") }], settings.theme, (v) => { settings.theme = v; applyTheme(); save(); }, t("theme"))),
+    h(
+      "div",
+      { class: "unit-row" },
+      h("span", {}, t("color")),
+      h(
+        "div",
+        { class: "swatches", role: "radiogroup", "aria-label": t("color") },
+        ...ACCENTS.map((a) => h("button", { class: `swatch sw-${a}`, role: "radio", "aria-checked": String(settings.accent === a), "aria-label": a, onclick: () => { settings.accent = a; applyTheme(); rerender(); } })),
+      ),
+    ),
   );
 }
 
@@ -1481,6 +1499,20 @@ registerMorePage({
   render: (root) => renderRecipes(root, { logText: (text) => runAnalysis({ text }), goChat: () => setTab("chat") }),
 });
 registerMorePage({ id: "shopping", emoji: "🛒", color: "#2f9e5e", title: "shopping", desc: "shoppingDesc", section: "tools", visible: () => featureOn("shopping"), render: (root) => renderShopping(root, { apiKey: () => settings.apiKey }) });
+registerMorePage({
+  id: "customize",
+  emoji: "🎨",
+  color: "#c3407c",
+  title: "customize",
+  desc: "customizeDesc",
+  section: "app",
+  render: (root) =>
+    renderCustomize(root, {
+      appearance: appearanceCard,
+      cardOn: (id) => (id === "summary" || id === "add" || id === "meals" ? true : id === "tip" ? featureOn("tips") : featureOn(id)),
+      changed: () => applyCustom(),
+    }),
+});
 registerMorePage({ id: "features", emoji: "🧩", color: "#e0a526", title: "features", desc: "featuresDesc", section: "app", render: (root) => renderFeatures(root) });
 
 function renderFeatures(root: HTMLElement) {
@@ -1770,7 +1802,12 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
 }
 
 applyTheme();
+applyCustom();
 applyLanguage();
+{
+  const start = custom().startTab;
+  if (start !== "today" && settings.onboarded && (start !== "chat" || featureOn("chat"))) setTab(start);
+}
 // People who used the app before achievements existed get their earned ones quietly.
 try {
   if (localStorage.getItem("fc.badges.v1") === null) checkBadges(true);
